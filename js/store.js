@@ -17,6 +17,7 @@ function sanitize(raw) {
     s.enabled = raw.enabled;
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
+  if (Array.isArray(raw.known) && raw.known.every(x => typeof x === 'string')) s.known = raw.known;
   return s;
 }
 

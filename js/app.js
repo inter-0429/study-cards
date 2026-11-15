@@ -1,18 +1,20 @@
 // 画面。ロジックは engine.js、保存は store.js にある。
 import {
   createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickTimedIndex,
-  pickTraining, unitProgress, fieldStats, FIELDS, activeVillainCount, villainRetries, checkInput,
+  pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput,
+  unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits,
 } from './engine.js';
 import { load, save } from './store.js';
 import { makeRecord, enqueue, flush, pending, isOn, setConnection } from './sync.js';
-import { UNITS } from '../data/units.js';
-import { ALL_QUESTIONS } from '../data/index.js';
+import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
 
 const TIMED_SECONDS = 10;
 const app = document.getElementById('app');
 const storage = (() => { try { return window.localStorage; } catch { return null; } })();
 
-let state = touchDay(load(storage), Date.now());
+// あとから足した教科の単元は、最初は範囲に入れる（前の版の記録は歴史の単元だけを知っている）
+let state = includeNewUnits(touchDay(load(storage), Date.now()),
+  ALL_UNITS.map(u => u.id), SUBJECTS.find(S => S.id === 'rekishi').units.map(u => u.id));
 persist();
 
 function persist() { save(storage, state); }
@@ -42,8 +44,10 @@ function shuffled(arr) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
-const unitById = id => UNITS.find(u => u.id === id);
-const villainCount = () => activeVillainCount(state, ALL_QUESTIONS);
+const unitById = id => ALL_UNITS.find(u => u.id === id);
+const villainCount = S => activeVillainCount(state, S.questions);
+const enabledUnits = S => S.units.filter(u => isEnabled(state, u.id));
+const pct = x => Math.round(x * 100);
 // 開きっぱなしで日をまたいでも連続日数を正しく数える
 function refreshDay() { state = touchDay(state, Date.now()); persist(); }
 
@@ -69,68 +73,115 @@ function beep(kind) {
   } catch { /* 音が出せなくても続ける */ }
 }
 
-// ---- ホーム ----
+// ---- ホーム（教科の一覧） ----
+function rankPanel() {
+  const r = rankFor(state.xp);
+  return el('div', { class: 'panel' },
+    el('div', { class: 'muted' }, 'ヒーロー候補生のランク（全教科の正解で経験値がたまって上がる）'),
+    el('div', { class: 'rank' }, r.name),
+    el('div', { class: 'bar' }, el('span', { style: `width:${pct(r.progress)}%` })),
+    el('div', { class: 'row mt' },
+      el('span', { class: 'muted' }, r.next === null ? `経験値 ${state.xp}・最高ランク！` : `経験値 ${state.xp}・次のランクまで ${r.next - state.xp}`),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'badge gold' }, `連続 ${state.days.count} 日`)));
+}
+
+function missionButton(S) {
+  return el('button', { class: 'primary', disabled: enabledUnits(S).length === 0,
+    onclick: () => startQuiz('mission', pickMission(state, S.questions), { subject: S }) }, '今日のミッション（5問）');
+}
+
+function subjectCard(S) {
+  const sum = subjectSummary(state, S);
+  const noRange = enabledUnits(S).length === 0;
+  return el('div', { class: 'panel subject' },
+    el('div', { class: 'row' }, el('h3', {}, S.name), el('span', { class: 'spacer' }),
+      sum.villains ? el('span', { class: 'badge villain' }, `ヴィラン ${sum.villains}体`) : null),
+    sum.attempts === 0
+      ? el('p', { class: 'muted' }, 'まだ解いていません')
+      : [el('div', { class: 'row' }, el('span', {}, `正答率 ${pct(sum.accuracy)}%`), el('span', { class: 'spacer' }),
+        el('span', { class: 'muted' }, `答えた数 ${sum.attempts}`)),
+      el('div', { class: 'bar' }, el('span', { style: `width:${pct(sum.accuracy)}%` }))],
+    sum.weakest ? el('p', { class: 'mt' }, el('span', { class: 'badge lv-weak' }, '苦手'), ' ',
+      `${sum.weakest.unit.stage}「${sum.weakest.unit.title}」 ${pct(sum.weakest.accuracy)}%`) : null,
+    noRange ? el('p', { class: 'muted mt' }, '範囲に入っている試験がありません。「開く」→「ステージ」で選んでください。') : null,
+    el('div', { class: 'mt' }), missionButton(S),
+    el('button', { class: 'mt', onclick: () => subjectHome(S) }, `${S.name}を開く`),
+    el('p', { class: 'muted center note' }, '特訓・ステージ・試験ごとの得意と苦手はここから'));
+}
+
 function home() {
   refreshDay();
-  const r = rankFor(state.xp);
-  const stats = fieldStats(state, ALL_QUESTIONS);
-  const maxStat = Math.max(10, ...Object.values(stats));
-  const enabledCount = UNITS.filter(u => isEnabled(state, u.id)).length;
-  const v = villainCount();
   const firstTime = Object.keys(state.qs).length === 0;
   screen(
     firstTime ? el('div', { class: 'panel guide' },
       el('h3', {}, 'はじめに'),
-      el('p', {}, 'これは歴史総合の問題を、ゲームのように解いて覚えるアプリです。'),
-      el('p', {}, 'まずは下の黄色いボタン「今日のミッション」を押して、5問に答えてみよう。'),
+      el('p', {}, 'これは問題をゲームのように解いて覚えるアプリです。'),
+      el('p', {}, '教科を選んで、黄色いボタン「今日のミッション」を押して、5問に答えてみよう。'),
       el('button', { class: 'small', onclick: help }, 'くわしい遊び方を見る')) : null,
-    el('div', { class: 'panel' },
-      el('div', { class: 'muted' }, 'ヒーロー候補生のランク（正解すると経験値がたまって上がる）'),
-      el('div', { class: 'rank' }, r.name),
-      el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(r.progress * 100)}%` })),
-      el('div', { class: 'row mt' },
-        el('span', { class: 'muted' }, r.next === null ? `経験値 ${state.xp}・最高ランク！` : `経験値 ${state.xp}・次のランクまで ${r.next - state.xp}`),
-        el('span', { class: 'spacer' }),
-        el('span', { class: 'badge gold' }, `連続 ${state.days.count} 日`)),
-    ),
-    enabledCount === 0
-      ? el('div', { class: 'panel' }, el('p', {}, '挑戦できる試験がありません。'), el('p', { class: 'muted' }, '「ステージ」で範囲に入れる試験を選んでください。'))
-      : el('button', { class: 'primary', onclick: () => startQuiz('mission', pickMission(state, ALL_QUESTIONS)) }, '今日のミッション（5問）'),
-    el('p', { class: 'muted center note' }, '毎日まずはここ。5問で3分くらい。移動中におすすめ'),
-    el('button', { class: 'secondary', disabled: enabledCount === 0, onclick: startTraining },
-      v > 0 ? `特訓（15分）・ヴィラン ${v} 体` : '特訓（15分）'),
-    el('p', { class: 'muted center note' }, 'まちがえた問題を集中して復習。家で時間があるときに'),
+    rankPanel(),
+    el('p', { class: 'muted note' }, '教科ごとの正答率と、いちばん苦手な試験が出ます。毎日まずはミッション（5問で3分くらい）'),
+    SUBJECTS.map(subjectCard),
     el('div', { class: 'grid2' },
-      el('button', { onclick: stages }, 'ステージ'),
-      el('button', { onclick: cards }, `カード ${state.cards.length}`),
-      el('button', { onclick: songs }, '歌カード'),
+      el('button', { onclick: help }, '遊び方'),
       el('button', { onclick: () => settings(false) }, '設定')),
-    el('button', { class: 'mt', onclick: help }, '遊び方・ボタンの説明'),
-    el('div', { class: 'panel mt' },
-      el('h3', {}, '能力値'),
-      el('p', { class: 'muted' }, '分野ごとに正解した数。短いバーの分野が苦手なところ'),
-      FIELDS.map(f => el('div', { class: 'stat' },
-        el('span', {}, f),
-        el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(stats[f] / maxStat * 100)}%` })),
-        el('span', { class: 'muted' }, stats[f])))),
+  );
+}
+
+// ---- 教科の画面 ----
+function skillsPanel(S) {
+  const rows = unitSkills(state, S.questions, S.units);
+  return el('div', { class: 'panel mt' },
+    el('h3', {}, '試験ごとの得意・苦手'),
+    el('p', { class: 'muted' }, `正答率（正解した割合）の低い順。答えた数が${SKILL_MIN_ATTEMPTS}回より少ない試験は「まだ少ない」`),
+    rows.map(r => el('div', { class: `skill ${r.level}` },
+      el('span', {}, `${r.unit.stage}「${r.unit.title}」`),
+      el('span', { class: `badge lv-${r.level}` }, r.level === 'few' ? SKILL_LABEL.few : `${SKILL_LABEL[r.level]} ${pct(r.accuracy)}%`),
+      el('div', { class: 'bar' }, el('span', { style: `width:${r.level === 'few' ? 0 : pct(r.accuracy)}%` })))));
+}
+
+function subjectHome(S) {
+  refreshDay();
+  const v = villainCount(S);
+  const noRange = enabledUnits(S).length === 0;
+  const owned = new Set(state.cards);
+  const terms = new Set(S.questions.filter(q => q.card).map(q => q.card));
+  screen(
+    el('div', { class: 'row' }, el('button', { class: 'small', onclick: home }, '← 教科の一覧'), el('span', { class: 'spacer' }), el('h1', {}, S.name)),
+    noRange ? el('div', { class: 'panel' }, el('p', {}, '挑戦できる試験がありません。'), el('p', { class: 'muted' }, '「ステージ」で範囲に入れる試験を選んでください。')) : null,
+    missionButton(S),
+    el('p', { class: 'muted center note' }, '毎日まずはここ。5問で3分くらい。移動中におすすめ'),
+    el('button', { class: 'secondary', disabled: noRange, onclick: () => startTraining(S) },
+      v > 0 ? `特訓（15分）・ヴィラン ${v} 体` : '特訓（15分）'),
+    el('p', { class: 'muted center note' }, 'まちがえた問題と苦手な試験を集中して復習。家で時間があるときに'),
+    el('div', { class: 'grid2' },
+      el('button', { onclick: () => stages(S) }, 'ステージ'),
+      el('button', { onclick: () => cards(S) }, `カード ${[...terms].filter(t => owned.has(t)).length}`),
+      el('button', { onclick: () => songs(S) }, '歌カード'),
+      el('button', { onclick: () => help(() => subjectHome(S)) }, '遊び方')),
+    skillsPanel(S),
   );
 }
 
 // ---- 遊び方 ----
 const HELP = [
   ['このアプリでやること', [
-    '歴史総合の問題を解いて、テストに出る語句を覚えるアプリです。',
-    '正解すると経験値がたまり、ヒーロー候補生のランクが上がります。',
+    '歴史総合・化学などの問題を解いて、テストに出る語句を覚えるアプリです。',
+    '最初の画面で教科を選びます。正解すると経験値がたまり、ヒーロー候補生のランクが上がります（ランクは全教科で1つ）。',
   ]],
   ['毎日の使い方', [
-    '① 移動中など毎日1回：「今日のミッション（5問）」を押して答える。',
-    '② 家で時間があるとき：「特訓（15分）」で、まちがえた問題を集中して復習。',
-    '③ テスト前：「ステージ」でテスト範囲ではない試験を「範囲から外す」。そうすると範囲の問題だけが出る。',
+    '① 移動中など毎日1回：教科の「今日のミッション（5問）」を押して答える。',
+    '② 家で時間があるとき：教科を開いて「特訓（15分）」で、まちがえた問題を集中して復習。',
+    '③ テスト前：教科を開いて「ステージ」で、テスト範囲ではない試験を「範囲から外す」。そうすると範囲の問題だけが出る。',
+  ]],
+  ['得意・苦手の見かた', [
+    '最初の画面：教科ごとの正答率と、いちばん苦手な試験。',
+    '教科を開いた画面：試験ごとの正答率。80%以上は「得意」、60%より下は「苦手」。答えた数が5回より少ないうちは「まだ少ない」。',
   ]],
   ['問題の種類', [
     '4択：4つの中から正しいものを選ぶ。',
     '○×：文が正しければ○、まちがっていれば×。',
-    '並べ替え：出来事を古い順にタップして「決定」。',
+    '並べ替え：問題文の順番（古い順・小さい順など）にタップして「決定」。',
     '入力：答えを打ちこんで「決定」。漢字でも、ひらがなでもOK。思い出せないときは「わからない」。',
     '「時間制限」と出た問題は10秒以内に正解するとボーナス +5。',
   ]],
@@ -139,11 +190,10 @@ const HELP = [
     'ヴィランは今日のミッションや特訓に何度も出ます。2回続けて正解すると撃破でき、経験値 +30。',
   ]],
   ['ボタンの説明', [
-    'ステージ：教科書の章ごとの試験。「挑戦する」でその章だけ5問、「要点を見る」でまとめを読める。',
+    'ステージ：教科書の内容ごとの試験。「挑戦する」でその試験だけ5問、「要点を見る」でまとめを読める。',
     'カード：2回正解した大事な語句が集まる図鑑。',
     '歌カード：リズムで覚える覚え歌。声に出して読んでみよう。',
     '設定：音のオン・オフと、記録を消してやり直す。おうちの人が「結果を送る」の設定をする場所もここ。',
-    '能力値：政治・外交・戦争・経済・社会の分野ごとに正解した数。短い分野が苦手なところ。',
     '連続○日：毎日続けると増える。1日空くと1からやり直し。',
   ]],
   ['経験値の増え方', [
@@ -152,11 +202,13 @@ const HELP = [
   ]],
 ];
 
-function help() {
+// back: もどる先（教科の画面から開いたときは、その教科の画面へ戻る）
+function help(back = home) {
+  if (typeof back !== 'function') back = home; // ボタンから直接呼ばれたとき（クリックの情報が渡る）
   screen(
-    el('div', { class: 'row' }, el('h1', {}, '遊び方'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
+    el('div', { class: 'row' }, el('h1', {}, '遊び方'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
     HELP.map(([title, lines]) => el('div', { class: 'panel' }, el('h3', {}, title), lines.map(t => el('p', {}, t)))),
-    el('button', { class: 'primary', onclick: home }, 'ホームへ'),
+    el('button', { class: 'primary', onclick: back }, 'もどる'),
   );
 }
 
@@ -164,11 +216,12 @@ function help() {
 let session = null;
 
 function startQuiz(mode, questions, opts = {}) {
-  if (!questions.length) { home(); return; }
+  if (!questions.length) { if (opts.subject) subjectHome(opts.subject); else home(); return; }
+  const subject = opts.subject || subjectOfUnit(questions[0].unit);
   session = {
-    mode, questions, idx: 0, timedIdx: pickTimedIndex(questions), retried: false,
+    mode, questions, subject, idx: 0, timedIdx: pickTimedIndex(questions), retried: false,
     xp: 0, combo: 0, maxCombo: 0, newCards: [], defeated: 0, born: 0, rankUp: null, correct: 0,
-    label: opts.label || (mode === 'mission' ? '今日のミッション' : ''), onDone: opts.onDone || result,
+    label: opts.label || (mode === 'mission' ? `${subject.name} 今日のミッション` : ''), onDone: opts.onDone || result,
   };
   showQuestion();
 }
@@ -195,7 +248,7 @@ function showQuestion() {
     refreshDay();
     const r = recordAnswer(state, q, ok, { timed: timed && ok, now: Date.now() });
     state = r.state; persist();
-    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now()));
+    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now(), subjectOfUnit(q.unit)?.name));
     sendLater();
     for (const e of r.events) {
       if (e.type === 'xp') s.xp += e.amount;
@@ -289,7 +342,7 @@ function showQuestion() {
       });
       decide.remove(); reset.remove();
     }
-    area.append(el('p', { class: 'muted' }, '古いものからタップしてね'), ...shown.map(i => btns[i]), el('div', { class: 'row' }, reset), el('div', { class: 'mt' }), decide);
+    area.append(el('p', { class: 'muted' }, '問題文の順番になるようにタップしてね'), ...shown.map(i => btns[i]), el('div', { class: 'row' }, reset), el('div', { class: 'mt' }), decide);
     s.timeout = () => finish(false, showOrder, picked.length ? picked.slice() : null);
   }
 
@@ -298,8 +351,8 @@ function showQuestion() {
       el('span', { class: 'badge' }, s.label || unit.stage),
       el('span', { class: 'spacer' }),
       el('span', { class: 'muted' }, `${s.idx + 1} / ${s.questions.length}`),
-      el('button', { class: 'small ghost', onclick: () => { stopTimer(); home(); } }, 'やめる')),
-    el('p', { class: 'muted' }, `${unit.stage}「${unit.title}」`,
+      el('button', { class: 'small ghost', onclick: () => { stopTimer(); subjectHome(s.subject); } }, 'やめる')),
+    el('p', { class: 'muted' }, `${s.subject.name} ${unit.stage}「${unit.title}」`,
       rec?.villain ? ' ' : null, rec?.villain ? el('span', { class: 'badge villain' }, 'ヴィラン') : null),
     timed ? el('div', {}, el('p', { class: 'badge gold' }, `時間制限 ${TIMED_SECONDS}秒・ボーナス+5`), el('div', { class: 'bar timer' }, timerBar)) : null,
     el('div', { class: 'qtext' }, q.q),
@@ -354,23 +407,26 @@ function result(s) {
       s.born ? el('p', { class: 'muted' }, `新しいヴィラン ${s.born} 体。特訓で倒そう`) : null),
     s.newCards.length ? el('div', { class: 'panel' }, el('h3', {}, '新しいカード'),
       el('div', { class: 'cardgrid' }, s.newCards.map(c => el('div', { class: 'card pop' }, c)))) : null,
-    el('button', { class: 'primary', onclick: () => startQuiz(s.mode, s.mode === 'mission' ? pickMission(state, ALL_QUESTIONS) : unitQuestions(s.questions[0].unit), { label: s.label }) }, 'もう1セット'),
+    el('button', { class: 'primary', onclick: () => startQuiz(s.mode, s.mode === 'mission' ? pickMission(state, s.subject.questions) : unitQuestions(s.questions[0].unit), { label: s.label, subject: s.subject }) }, 'もう1セット'),
     el('div', { class: 'mt' }),
-    el('button', { onclick: home }, 'ホームへ'),
+    el('button', { onclick: () => subjectHome(s.subject) }, `${s.subject.name}の画面へ`),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'ghost', onclick: home }, '教科の一覧へ'),
   );
 }
 
 // ---- ステージ ----
 function unitQuestions(unitId) {
-  return pickMission({ ...state, enabled: [unitId] }, ALL_QUESTIONS);
+  return pickMission({ ...state, enabled: [unitId] }, ALL_QS);
 }
 
-function stages() {
+function stages(S) {
+  const back = () => subjectHome(S);
   screen(
-    el('div', { class: 'row' }, el('h1', {}, 'ステージ'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
+    el('div', { class: 'row' }, el('h1', {}, `${S.name}のステージ`), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
     el('p', { class: 'muted' }, 'テストの範囲に入っていない試験は「範囲から外す」にしよう。外した試験は今日のミッションと特訓に出なくなる。'),
-    UNITS.map(u => {
-      const p = unitProgress(state, ALL_QUESTIONS, u.id);
+    S.units.map(u => {
+      const p = unitProgress(state, S.questions, u.id);
       const on = isEnabled(state, u.id);
       return el('div', { class: 'panel' },
         el('div', { class: 'row' },
@@ -382,20 +438,22 @@ function stages() {
         el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(p.cleared / p.total * 100)}%` })),
         el('p', { class: 'muted mt' }, `正解した問題 ${p.cleared} / ${p.total}`),
         el('div', { class: 'row wrap' },
-          el('button', { class: 'small', onclick: () => startQuiz('unit', unitQuestions(u.id), { label: u.stage }) }, '挑戦する'),
-          el('button', { class: 'small', onclick: () => summary(u, stages) }, '要点を見る'),
-          el('button', { class: 'small ghost', onclick: () => toggleUnit(u.id) }, on ? '範囲から外す' : '範囲に入れる')));
+          el('button', { class: 'small', onclick: () => startQuiz('unit', unitQuestions(u.id), { label: `${S.name} ${u.stage}`, subject: S }) }, '挑戦する'),
+          el('button', { class: 'small', onclick: () => summary(u, () => stages(S)) }, '要点を見る'),
+          el('button', { class: 'small ghost', onclick: () => toggleUnit(u.id, S) }, on ? '範囲から外す' : '範囲に入れる')));
     }),
-    el('button', { onclick: home }, 'ホームへ'),
+    el('button', { onclick: back }, `${S.name}の画面へ`),
   );
 }
 
-function toggleUnit(id) {
-  const cur = state.enabled === null ? UNITS.map(u => u.id) : state.enabled.slice();
+// 範囲の ON/OFF は単元ごと。全教科の単元がすべて ON のときは null（＝全部）にしておく
+function toggleUnit(id, S) {
+  const all = ALL_UNITS.map(u => u.id);
+  const cur = state.enabled === null ? all : state.enabled.slice();
   const nextList = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id];
-  state = { ...state, enabled: nextList.length === UNITS.length ? null : UNITS.map(u => u.id).filter(x => nextList.includes(x)) };
+  state = { ...state, enabled: all.every(x => nextList.includes(x)) ? null : all.filter(x => nextList.includes(x)) };
   persist();
-  stages();
+  stages(S);
 }
 
 function summary(u, back, nextLabel, onNext) {
@@ -410,28 +468,28 @@ function summary(u, back, nextLabel, onNext) {
 }
 
 // ---- 特訓 ----
-function startTraining() {
-  const rounds = pickTraining(state, ALL_QUESTIONS, UNITS);
-  if (!rounds.length) { home(); return; }
-  const villainsBefore = villainCount();
+function startTraining(S) {
+  const rounds = pickTraining(state, S.questions, S.units);
+  if (!rounds.length) { subjectHome(S); return; }
+  const villainsBefore = villainCount(S);
   let total = { xp: 0, defeated: 0, correct: 0, count: 0, newCards: [], rankUp: null };
   const runRound = (k) => {
     const rd = rounds[k];
-    summary(rd.unit, home, `ラウンド ${k + 1} / ${rounds.length} を始める`, () => startQuiz('training', rd.questions, {
-      label: `特訓 ${k + 1}/${rounds.length}`,
+    summary(rd.unit, () => subjectHome(S), `ラウンド ${k + 1} / ${rounds.length} を始める`, () => startQuiz('training', rd.questions, {
+      label: `${S.name} 特訓 ${k + 1}/${rounds.length}`, subject: S,
       onDone: (s) => {
         total.xp += s.xp; total.defeated += s.defeated; total.correct += s.correct; total.count += s.questions.length;
         total.newCards.push(...s.newCards); total.rankUp = s.rankUp || total.rankUp;
-        if (k + 1 < rounds.length) runRound(k + 1); else trainingResult(total, villainsBefore);
+        if (k + 1 < rounds.length) runRound(k + 1); else trainingResult(total, villainsBefore, S);
       },
     }));
   };
   runRound(0);
 }
 
-function trainingResult(t, before) {
+function trainingResult(t, before, S) {
   if (t.rankUp) beep('up');
-  const left = villainCount();
+  const left = villainCount(S);
   screen(
     el('h1', { class: 'center' }, '特訓おつかれさま！'),
     t.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, t.rankUp)) : null,
@@ -442,19 +500,19 @@ function trainingResult(t, before) {
       el('p', { class: 'muted' }, left ? `残っているヴィラン ${left} 体（特訓前 ${before} 体）` : 'ヴィランは残っていない！')),
     t.newCards.length ? el('div', { class: 'panel' }, el('h3', {}, '新しいカード'),
       el('div', { class: 'cardgrid' }, t.newCards.map(c => el('div', { class: 'card pop' }, c)))) : null,
-    el('button', { class: 'primary', onclick: home }, 'ホームへ'),
+    el('button', { class: 'primary', onclick: () => subjectHome(S) }, `${S.name}の画面へ`),
   );
 }
 
 // ---- カード（8枚ずつ＝8カウント） ----
-function cards() {
+function cards(S) {
   const owned = new Set(state.cards);
-  const all = new Set(ALL_QUESTIONS.filter(q => q.card).map(q => q.card));
+  const all = new Set(S.questions.filter(q => q.card).map(q => q.card));
   screen(
-    el('div', { class: 'row' }, el('h1', {}, 'カード'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
+    el('div', { class: 'row' }, el('h1', {}, `${S.name}のカード`), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: () => subjectHome(S) }, 'もどる')),
     el('p', { class: 'muted' }, `集めたカード ${[...owned].filter(c => all.has(c)).length} / ${all.size}。同じ問題に2回正解するとカードになる。8枚で1フレーズ。`),
-    UNITS.map(u => {
-      const terms = [...new Set(ALL_QUESTIONS.filter(q => q.unit === u.id && q.card).map(q => q.card))];
+    S.units.map(u => {
+      const terms = [...new Set(S.questions.filter(q => q.unit === u.id && q.card).map(q => q.card))];
       const got = terms.filter(t => owned.has(t)).length;
       const phrases = [];
       for (let i = 0; i < terms.length; i += 8) phrases.push(terms.slice(i, i + 8));
@@ -470,11 +528,11 @@ function cards() {
 }
 
 // ---- 歌カード ----
-function songs() {
+function songs(S) {
   screen(
-    el('div', { class: 'row' }, el('h1', {}, '歌カード'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
+    el('div', { class: 'row' }, el('h1', {}, `${S.name}の歌カード`), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: () => subjectHome(S) }, 'もどる')),
     el('p', { class: 'muted' }, '自分の好きなリズムで声に出してみよう。1行が1カウント。'),
-    UNITS.map(u => el('div', { class: 'panel' },
+    S.units.map(u => el('div', { class: 'panel' },
       el('span', { class: 'badge' }, u.stage),
       u.songs.map(sg => [el('h3', { class: 'mt' }, sg.title), el('div', { class: 'song' }, sg.lines.join('\n'))]))),
   );

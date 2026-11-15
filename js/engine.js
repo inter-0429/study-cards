@@ -79,6 +79,21 @@ export function isEnabled(state, unitId) {
   return state.enabled === null || state.enabled.includes(unitId);
 }
 
+// あとから足した教科の単元は、最初は範囲に入れる。
+// known = 記録が「知っている」単元の一覧。前の版の記録には無いので legacyKnown（歴史の単元）とみなす。
+// 範囲の一覧（enabled）にある単元と、まだ知らなかった単元を範囲に入れ、全部そろえば null（＝全部）にする。
+export function includeNewUnits(state, allIds, legacyKnown) {
+  const s = clone(state);
+  const known = Array.isArray(s.known) ? s.known : legacyKnown;
+  if (Array.isArray(s.enabled)) {
+    const on = id => s.enabled.includes(id) || !known.includes(id);
+    const next = allIds.filter(on);
+    s.enabled = next.length === allIds.length ? null : next;
+  }
+  s.known = allIds.slice();
+  return s;
+}
+
 function shuffle(arr, rng) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -154,7 +169,45 @@ export function unitProgress(state, questions, unitId) {
     if (r.villain) villains++;
   }
   const attempts = correct + wrong;
-  return { total: qs.length, cleared, accuracy: attempts ? correct / attempts : 0, villains, done: qs.length > 0 && cleared === qs.length };
+  return { total: qs.length, cleared, attempts, accuracy: attempts ? correct / attempts : 0, villains, done: qs.length > 0 && cleared === qs.length };
+}
+
+// ---- 得意・苦手 ----
+export const SKILL_MIN_ATTEMPTS = 5; // これより少ないうちは決めつけない
+export const SKILL_GOOD = 0.8;
+export const SKILL_WEAK = 0.6;
+export const SKILL_LABEL = { good: '得意', ok: 'ふつう', weak: '苦手', few: 'まだ少ない' };
+
+export function skillLevel(accuracy, attempts) {
+  if (attempts < SKILL_MIN_ATTEMPTS) return 'few';
+  if (accuracy >= SKILL_GOOD) return 'good';
+  if (accuracy < SKILL_WEAK) return 'weak';
+  return 'ok';
+}
+
+// 単元ごとの得意・苦手。正答率の低い順（同じなら単元の順）、「まだ少ない」は最後
+export function unitSkills(state, questions, units) {
+  const rows = units.map((unit, i) => {
+    const p = unitProgress(state, questions, unit.id);
+    return { unit, i, total: p.total, attempts: p.attempts, accuracy: p.accuracy, villains: p.villains, level: skillLevel(p.accuracy, p.attempts) };
+  });
+  rows.sort((a, b) => ((a.level === 'few') - (b.level === 'few')) || (a.level === 'few' ? 0 : a.accuracy - b.accuracy) || (a.i - b.i));
+  return rows.map(({ i, ...r }) => r);
+}
+
+// 教科のまとめ（教科の一覧に出すもの）。weakest は「苦手」の単元のうち正答率がいちばん低いもの
+export function subjectSummary(state, subject) {
+  let correct = 0, wrong = 0, villains = 0;
+  for (const q of subject.questions) {
+    const r = state.qs[q.id];
+    if (!r) continue;
+    correct += r.correct;
+    wrong += r.wrong;
+    if (r.villain && isEnabled(state, q.unit)) villains++; // 教科の画面・特訓と同じく、範囲に入っている試験だけ
+  }
+  const attempts = correct + wrong;
+  const weak = unitSkills(state, subject.questions, subject.units).find(r => r.level === 'weak');
+  return { attempts, accuracy: attempts ? correct / attempts : 0, villains, weakest: weak ? { unit: weak.unit, accuracy: weak.accuracy } : null };
 }
 
 export function pickTraining(state, questions, units, rng = Math.random) {

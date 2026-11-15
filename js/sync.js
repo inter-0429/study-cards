@@ -86,11 +86,13 @@ function givenText(q, v) {
   return t ? t.slice(0, 100) : NONE;
 }
 
-export function makeRecord(q, unit, ok, given, now) {
+// subjectName（教科名）があれば、試験の欄の先頭に入れる（例: 化学 一次試験「コロイド」）
+export function makeRecord(q, unit, ok, given, now, subjectName = '') {
+  const stage = unit ? `${unit.stage}「${unit.title}」` : '';
   return {
     at: stamp(now),
     id: q.id,
-    stage: unit ? `${unit.stage}「${unit.title}」` : '',
+    stage: subjectName && stage ? `${subjectName} ${stage}` : stage,
     type: TYPE[q.type] || String(q.type),
     ok: !!ok,
     q: q.q,
