@@ -5,11 +5,14 @@ import { UNITS as KAGAKU_UNITS } from './kagaku/units.js';
 import { QUESTIONS as KAGAKU_QS } from './kagaku/index.js';
 import { UNITS as SEIBUTSU_UNITS } from './seibutsu/units.js';
 import { QUESTIONS as SEIBUTSU_QS } from './seibutsu/index.js';
+import { UNITS as BUTSURI_UNITS } from './butsuri/units.js';
+import { QUESTIONS as BUTSURI_QS } from './butsuri/index.js';
 
 export const SUBJECTS = [
   { id: 'rekishi', name: '歴史総合', units: REKISHI_UNITS, questions: REKISHI_QS, fields: ['政治', '外交', '戦争', '経済', '社会'] },
   { id: 'kagaku', name: '化学', units: KAGAKU_UNITS, questions: KAGAKU_QS, fields: ['用語', '現象', '構造', '計算'] },
   { id: 'seibutsu', name: '生物基礎', units: SEIBUTSU_UNITS, questions: SEIBUTSU_QS, fields: ['用語', 'しくみ', '細胞', '病気'] },
+  { id: 'butsuri', name: '物理基礎', units: BUTSURI_UNITS, questions: BUTSURI_QS, fields: ['用語', '法則', '計算'] },
 ];
 
 export const ALL_UNITS = SUBJECTS.flatMap(s => s.units);
