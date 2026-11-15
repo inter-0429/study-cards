@@ -140,9 +140,10 @@ export function checkInput(q, text) {
   return t.length > 0 && q.answers.some(a => normalizeAnswer(a) === t);
 }
 
-// 時間制限つきにする問題の位置。並べ替え・入力は操作が多いので対象外。なければ -1
+// 時間制限つきにする問題の位置。並べ替え・入力は操作が多く、計算問題は考える時間がいるので対象外。なければ -1
 export function pickTimedIndex(questions, rng = Math.random) {
-  const idx = questions.map((q, i) => (q.type === 'order' || q.type === 'input' ? -1 : i)).filter(i => i >= 0);
+  const skip = q => q.type === 'order' || q.type === 'input' || q.field === '計算';
+  const idx = questions.map((q, i) => (skip(q) ? -1 : i)).filter(i => i >= 0);
   if (!idx.length) return -1;
   return idx[Math.floor(rng() * idx.length)];
 }
