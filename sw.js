@@ -1,5 +1,5 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
-const CACHE = 'hero-study-v4';
+const CACHE = 'hero-study-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -23,6 +23,14 @@ const ASSETS = [
   './data/u07.js',
   './data/u08.js',
   './data/u09.js',
+  './data/subjects.js',
+  './data/kagaku/units.js',
+  './data/kagaku/index.js',
+  './data/kagaku/k01.js',
+  './data/kagaku/k02.js',
+  './data/kagaku/k03.js',
+  './data/kagaku/k04.js',
+  './data/kagaku/k05.js',
 ];
 
 self.addEventListener('install', (e) => {
