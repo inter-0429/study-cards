@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ヒーロー試験">
+<meta name="theme-color" content="#141846">
+<title>ヒーロー候補生の試験</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+<noscript>このアプリを使うには JavaScript を有効にしてください。</noscript>
+<script type="module" src="js/app.js"></script>
+<script>
+  // アプリが起動できなかったとき（とても古い iOS など）に、真っ暗のままにしない
+  setTimeout(function () {
+    var app = document.getElementById('app');
+    if (app && !app.firstChild) {
+      app.innerHTML = '<div class="panel"><p>アプリを起動できませんでした。</p><p class="muted">iPhone の「設定」→「一般」→「ソフトウェアアップデート」で iOS を新しくしてから、もう一度開いてください。</p></div>';
+    }
+  }, 4000);
+</script>
+</body>
+</html>
