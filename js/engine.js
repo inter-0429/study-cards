@@ -106,9 +106,28 @@ export function pickMission(state, questions, rng = Math.random) {
   return shuffle(picked, rng);
 }
 
-// 時間制限つきにする問題の位置。並べ替えは操作が多いので対象外。なければ -1
+// ---- 入力問題の答え合わせ ----
+
+// 打ち方のゆれをそろえる: 全角→半角、カタカナ→ひらがな、小さいぁぃぅぇぉ→大きい字、空白と「・」などの記号を消す
+export function normalizeAnswer(text) {
+  return String(text ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[ァ-ヴ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[ゕゖヵヶ]/g, 'か')
+    .replace(/[ぁぃぅぇぉ]/g, c => String.fromCharCode(c.charCodeAt(0) + 1))
+    .replace(/[-‐‑–—―─]/g, 'ー')
+    .replace(/[\s・･·.,、。，．「」『』"'=＝]/g, '');
+}
+
+export function checkInput(q, text) {
+  const t = normalizeAnswer(text);
+  return t.length > 0 && q.answers.some(a => normalizeAnswer(a) === t);
+}
+
+// 時間制限つきにする問題の位置。並べ替え・入力は操作が多いので対象外。なければ -1
 export function pickTimedIndex(questions, rng = Math.random) {
-  const idx = questions.map((q, i) => (q.type === 'order' ? -1 : i)).filter(i => i >= 0);
+  const idx = questions.map((q, i) => (q.type === 'order' || q.type === 'input' ? -1 : i)).filter(i => i >= 0);
   if (!idx.length) return -1;
   return idx[Math.floor(rng() * idx.length)];
 }

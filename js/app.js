@@ -1,7 +1,7 @@
 // 画面。ロジックは engine.js、保存は store.js にある。
 import {
   createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickTimedIndex,
-  pickTraining, unitProgress, fieldStats, FIELDS, activeVillainCount, villainRetries,
+  pickTraining, unitProgress, fieldStats, FIELDS, activeVillainCount, villainRetries, checkInput,
 } from './engine.js';
 import { load, save } from './store.js';
 import { UNITS } from '../data/units.js';
@@ -73,9 +73,15 @@ function home() {
   const maxStat = Math.max(10, ...Object.values(stats));
   const enabledCount = UNITS.filter(u => isEnabled(state, u.id)).length;
   const v = villainCount();
+  const firstTime = Object.keys(state.qs).length === 0;
   screen(
+    firstTime ? el('div', { class: 'panel guide' },
+      el('h3', {}, 'はじめに'),
+      el('p', {}, 'これは歴史総合の問題を、ゲームのように解いて覚えるアプリです。'),
+      el('p', {}, 'まずは下の黄色いボタン「今日のミッション」を押して、5問に答えてみよう。'),
+      el('button', { class: 'small', onclick: help }, 'くわしい遊び方を見る')) : null,
     el('div', { class: 'panel' },
-      el('div', { class: 'muted' }, 'ヒーロー候補生のランク'),
+      el('div', { class: 'muted' }, 'ヒーロー候補生のランク（正解すると経験値がたまって上がる）'),
       el('div', { class: 'rank' }, r.name),
       el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(r.progress * 100)}%` })),
       el('div', { class: 'row mt' },
@@ -86,20 +92,67 @@ function home() {
     enabledCount === 0
       ? el('div', { class: 'panel' }, el('p', {}, '挑戦できる試験がありません。'), el('p', { class: 'muted' }, '「ステージ」で範囲に入れる試験を選んでください。'))
       : el('button', { class: 'primary', onclick: () => startQuiz('mission', pickMission(state, ALL_QUESTIONS)) }, '今日のミッション（5問）'),
-    el('div', { class: 'mt' }),
+    el('p', { class: 'muted center note' }, '毎日まずはここ。5問で3分くらい。移動中におすすめ'),
     el('button', { class: 'secondary', disabled: enabledCount === 0, onclick: startTraining },
       v > 0 ? `特訓（15分）・ヴィラン ${v} 体` : '特訓（15分）'),
-    el('div', { class: 'grid2 mt' },
+    el('p', { class: 'muted center note' }, 'まちがえた問題を集中して復習。家で時間があるときに'),
+    el('div', { class: 'grid2' },
       el('button', { onclick: stages }, 'ステージ'),
       el('button', { onclick: cards }, `カード ${state.cards.length}`),
       el('button', { onclick: songs }, '歌カード'),
       el('button', { onclick: () => settings(false) }, '設定')),
+    el('button', { class: 'mt', onclick: help }, '遊び方・ボタンの説明'),
     el('div', { class: 'panel mt' },
       el('h3', {}, '能力値'),
+      el('p', { class: 'muted' }, '分野ごとに正解した数。短いバーの分野が苦手なところ'),
       FIELDS.map(f => el('div', { class: 'stat' },
         el('span', {}, f),
         el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(stats[f] / maxStat * 100)}%` })),
         el('span', { class: 'muted' }, stats[f])))),
+  );
+}
+
+// ---- 遊び方 ----
+const HELP = [
+  ['このアプリでやること', [
+    '歴史総合の問題を解いて、テストに出る語句を覚えるアプリです。',
+    '正解すると経験値がたまり、ヒーロー候補生のランクが上がります。',
+  ]],
+  ['毎日の使い方', [
+    '① 移動中など毎日1回：「今日のミッション（5問）」を押して答える。',
+    '② 家で時間があるとき：「特訓（15分）」で、まちがえた問題を集中して復習。',
+    '③ テスト前：「ステージ」でテスト範囲ではない試験を「範囲から外す」。そうすると範囲の問題だけが出る。',
+  ]],
+  ['問題の種類', [
+    '4択：4つの中から正しいものを選ぶ。',
+    '○×：文が正しければ○、まちがっていれば×。',
+    '並べ替え：出来事を古い順にタップして「決定」。',
+    '入力：答えを打ちこんで「決定」。漢字でも、ひらがなでもOK。思い出せないときは「わからない」。',
+    '「時間制限」と出た問題は10秒以内に正解するとボーナス +5。',
+  ]],
+  ['ヴィラン（苦手な問題）', [
+    '同じ問題を2回まちがえると、その問題が「ヴィラン」になります。',
+    'ヴィランは今日のミッションや特訓に何度も出ます。2回続けて正解すると撃破でき、経験値 +30。',
+  ]],
+  ['ボタンの説明', [
+    'ステージ：教科書の章ごとの試験。「挑戦する」でその章だけ5問、「要点を見る」でまとめを読める。',
+    'カード：2回正解した大事な語句が集まる図鑑。',
+    '歌カード：リズムで覚える覚え歌。声に出して読んでみよう。',
+    '設定：音のオン・オフと、記録を消してやり直す。',
+    '能力値：政治・外交・戦争・経済・社会の分野ごとに正解した数。短い分野が苦手なところ。',
+    '連続○日：毎日続けると増える。1日空くと1からやり直し。',
+  ]],
+  ['経験値の増え方', [
+    '正解 +10、時間制限の問題に正解 +5、ヴィラン撃破 +30。',
+    'ランク：候補生 → 見習い（100）→ 一次合格（300）→ 二次合格（600）→ 最終試験挑戦者（1000）→ 合格者（1500）',
+  ]],
+];
+
+function help() {
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, '遊び方'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
+    HELP.map(([title, lines]) => el('div', { class: 'panel' }, el('h3', {}, title), lines.map(t => el('p', {}, t)))),
+    el('button', { class: 'primary', onclick: home }, 'ホームへ'),
   );
 }
 
@@ -124,6 +177,7 @@ function showQuestion() {
   const rec = state.qs[q.id];
   let answered = false;
   let timer = null;
+  let focusEl = null;
 
   const fb = el('div');
   const area = el('div');
@@ -177,6 +231,34 @@ function showQuestion() {
     });
     area.append(el('div', { class: 'tf' }, yes, no));
     s.timeout = () => finish(false, () => mark(null));
+  } else if (q.type === 'input') {
+    const box = el('input', {
+      type: 'text', class: 'answer', placeholder: 'ここに答えを入力', autocomplete: 'off',
+      autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done',
+    });
+    const decide = el('button', { class: 'primary', disabled: true, onclick: () => submit() }, '決定');
+    const giveup = el('button', { class: 'small ghost', onclick: () => finish(false, () => show(false)) }, 'わからない');
+    const after = el('div');
+    const submit = () => {
+      if (answered || !box.value.trim()) return;
+      const ok = checkInput(q, box.value);
+      finish(ok, () => show(ok));
+    };
+    function show(ok) {
+      box.disabled = true;
+      box.classList.add(ok ? 'correct' : 'wrong');
+      decide.remove(); giveup.remove(); hint.remove();
+      after.append(el('p', { class: 'answerline' }, '正解：', el('b', {}, q.answers[0])));
+    }
+    box.addEventListener('input', () => { decide.disabled = !box.value.trim(); });
+    box.addEventListener('keydown', e => {
+      // 漢字に変換している途中の Enter は決定にしない
+      if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); }
+    });
+    const hint = el('p', { class: 'muted' }, '漢字でも、ひらがなでもOK');
+    area.append(box, hint, after, el('div', { class: 'mt' }), decide, el('div', { class: 'row mt' }, giveup));
+    s.timeout = () => finish(false, () => show(false));
+    focusEl = box;
   } else {
     const picked = [];
     const nums = q.choices.map(() => el('span', { class: 'num empty' }, '0'));
@@ -216,6 +298,7 @@ function showQuestion() {
     el('div', { class: 'qtext' }, q.q),
     area, fb,
   );
+  if (focusEl) focusEl.focus();
 
   // 時間制限: 画面を離れている間（ロック・ほかのアプリ）は止める
   let remaining = TIMED_SECONDS * 1000;

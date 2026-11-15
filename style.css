@@ -100,3 +100,23 @@ button.picked { border-color: var(--gold); }
 .danger { background: #8a1f2b; }
 .center { text-align: center; }
 .mt { margin-top: 12px; }
+input.answer {
+  font: inherit;
+  font-size: 20px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 14px;
+  margin: 4px 0 8px;
+}
+input.answer:focus { outline: none; border-color: var(--gold); }
+input.answer.correct { border-color: var(--ok); }
+input.answer.wrong { border-color: var(--ng); }
+input.answer:disabled { opacity: 1; }
+.answerline { font-size: 18px; }
+.answerline b { color: var(--gold); }
+.note { margin: 4px 0 14px; }
+.guide { border: 2px solid var(--gold); }
