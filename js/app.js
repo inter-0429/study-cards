@@ -4,6 +4,7 @@ import {
   pickTraining, unitProgress, fieldStats, FIELDS, activeVillainCount, villainRetries, checkInput,
 } from './engine.js';
 import { load, save } from './store.js';
+import { makeRecord, enqueue, flush, pending, isOn, setConnection } from './sync.js';
 import { UNITS } from '../data/units.js';
 import { ALL_QUESTIONS } from '../data/index.js';
 
@@ -15,6 +16,9 @@ let state = touchDay(load(storage), Date.now());
 persist();
 
 function persist() { save(storage, state); }
+
+// 解いた結果を保護者のスプレッドシートへ送る（設定で接続コードを貼ったときだけ）
+function sendLater() { flush(storage).catch(() => {}); }
 
 // ---- 小さな道具 ----
 function el(tag, attrs = {}, ...kids) {
@@ -138,7 +142,7 @@ const HELP = [
     'ステージ：教科書の章ごとの試験。「挑戦する」でその章だけ5問、「要点を見る」でまとめを読める。',
     'カード：2回正解した大事な語句が集まる図鑑。',
     '歌カード：リズムで覚える覚え歌。声に出して読んでみよう。',
-    '設定：音のオン・オフと、記録を消してやり直す。',
+    '設定：音のオン・オフと、記録を消してやり直す。おうちの人が「結果を送る」の設定をする場所もここ。',
     '能力値：政治・外交・戦争・経済・社会の分野ごとに正解した数。短い分野が苦手なところ。',
     '連続○日：毎日続けると増える。1日空くと1からやり直し。',
   ]],
@@ -183,13 +187,16 @@ function showQuestion() {
   const area = el('div');
   const timerBar = el('span', { style: 'width:100%' });
 
-  function finish(ok, showCorrect) {
+  // given: 子どもの答え（4択=番号・○×=true/false・並べ替え=押した順・入力=文字）。答えていないときは null
+  function finish(ok, showCorrect, given) {
     if (answered) return;
     answered = true;
     stopTimer();
     refreshDay();
     const r = recordAnswer(state, q, ok, { timed: timed && ok, now: Date.now() });
     state = r.state; persist();
+    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now()));
+    sendLater();
     for (const e of r.events) {
       if (e.type === 'xp') s.xp += e.amount;
       if (e.type === 'card') s.newCards.push(e.term);
@@ -213,36 +220,36 @@ function showQuestion() {
 
   if (q.type === 'choice') {
     const order = shuffled([0, 1, 2, 3]);
-    const btns = order.map(i => el('button', { class: 'choice', onclick: () => finish(i === q.answer, () => mark(i)) }, q.choices[i]));
+    const btns = order.map(i => el('button', { class: 'choice', onclick: () => finish(i === q.answer, () => mark(i), i) }, q.choices[i]));
     const mark = (picked) => btns.forEach((b, k) => {
       b.disabled = true;
       if (order[k] === q.answer) b.classList.add('correct');
       else if (order[k] === picked) b.classList.add('wrong');
     });
     area.append(...btns);
-    s.timeout = () => finish(false, () => mark(-1));
+    s.timeout = () => finish(false, () => mark(-1), null);
   } else if (q.type === 'tf') {
-    const yes = el('button', { onclick: () => finish(q.answer === true, () => mark(true)) }, '○');
-    const no = el('button', { onclick: () => finish(q.answer === false, () => mark(false)) }, '×');
+    const yes = el('button', { onclick: () => finish(q.answer === true, () => mark(true), true) }, '○');
+    const no = el('button', { onclick: () => finish(q.answer === false, () => mark(false), false) }, '×');
     const mark = (picked) => [[yes, true], [no, false]].forEach(([b, v]) => {
       b.disabled = true;
       if (v === q.answer) b.classList.add('correct');
       else if (v === picked) b.classList.add('wrong');
     });
     area.append(el('div', { class: 'tf' }, yes, no));
-    s.timeout = () => finish(false, () => mark(null));
+    s.timeout = () => finish(false, () => mark(null), null);
   } else if (q.type === 'input') {
     const box = el('input', {
       type: 'text', class: 'answer', placeholder: 'ここに答えを入力', autocomplete: 'off',
       autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done',
     });
     const decide = el('button', { class: 'primary', disabled: true, onclick: () => submit() }, '決定');
-    const giveup = el('button', { class: 'small ghost', onclick: () => finish(false, () => show(false)) }, 'わからない');
+    const giveup = el('button', { class: 'small ghost', onclick: () => finish(false, () => show(false), null) }, 'わからない');
     const after = el('div');
     const submit = () => {
       if (answered || !box.value.trim()) return;
       const ok = checkInput(q, box.value);
-      finish(ok, () => show(ok));
+      finish(ok, () => show(ok), box.value);
     };
     function show(ok) {
       box.disabled = true;
@@ -257,7 +264,7 @@ function showQuestion() {
     });
     const hint = el('p', { class: 'muted' }, '漢字でも、ひらがなでもOK');
     area.append(box, hint, after, el('div', { class: 'mt' }), decide, el('div', { class: 'row mt' }, giveup));
-    s.timeout = () => finish(false, () => show(false));
+    s.timeout = () => finish(false, () => show(false), box.value.trim() || null);
     focusEl = box;
   } else {
     const picked = [];
@@ -265,7 +272,7 @@ function showQuestion() {
     const btns = q.choices.map((c, i) => el('button', { class: 'choice', onclick: () => pick(i) }, nums[i], c));
     // 表示の順番を毎回変える（押す位置で覚えないように）。答え合わせは元の番号で行う
     const shown = shuffled(q.choices.map((_, i) => i));
-    const decide = el('button', { class: 'primary', disabled: true, onclick: () => finish(picked.every((v, k) => v === q.answer[k]), showOrder) }, '決定');
+    const decide = el('button', { class: 'primary', disabled: true, onclick: () => finish(picked.every((v, k) => v === q.answer[k]), showOrder, picked.slice()) }, '決定');
     const reset = el('button', { class: 'small ghost', onclick: () => { picked.length = 0; refresh(); } }, 'やり直す');
     function pick(i) { if (answered || picked.includes(i)) return; picked.push(i); refresh(); }
     function refresh() {
@@ -283,7 +290,7 @@ function showQuestion() {
       decide.remove(); reset.remove();
     }
     area.append(el('p', { class: 'muted' }, '古いものからタップしてね'), ...shown.map(i => btns[i]), el('div', { class: 'row' }, reset), el('div', { class: 'mt' }), decide);
-    s.timeout = () => finish(false, showOrder);
+    s.timeout = () => finish(false, showOrder, picked.length ? picked.slice() : null);
   }
 
   screen(
@@ -474,7 +481,39 @@ function songs() {
 }
 
 // ---- 設定 ----
-function settings(confirming = false) {
+const SYNC_MSG = {
+  ok: '保存しました。これから解いた結果が送られます。',
+  cleared: '送るのをやめました。',
+  bad: '接続コードの形がちがいます。もう一度コピーして、そのまま貼り付けてください。',
+};
+
+// 結果を送る設定（保護者用）。貼った接続コードは画面に出さない
+function syncPanel(msg) {
+  const on = isOn(storage);
+  const box = el('input', {
+    type: 'text', class: 'answer', placeholder: '接続コードを貼り付け', autocomplete: 'off',
+    autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: '400',
+  });
+  const saveBtn = el('button', { class: 'small', onclick: () => {
+    if (!box.value.trim()) return;
+    const r = setConnection(storage, box.value);
+    if (r === 'ok') sendLater();
+    settings(false, SYNC_MSG[r]);
+  } }, '保存');
+  return el('div', { class: 'panel' },
+    el('h3', {}, '結果を送る（おうちの人の設定）'),
+    el('p', { class: 'muted' }, on
+      ? `今は送る設定です。まだ送れていない記録：${pending(storage).length} 件（電波が戻ると自動で送ります）`
+      : '今は送らない設定です。'),
+    el('p', { class: 'muted' }, '送るのは、解いた日時・問題・正解・答え・正誤だけです。名前や学校名は送りません。'),
+    msg ? el('p', {}, msg) : null,
+    box,
+    el('div', { class: 'row mt' }, saveBtn),
+    on ? el('button', { class: 'small ghost mt', onclick: () => settings(false, SYNC_MSG[setConnection(storage, '')]) }, '送るのをやめる') : null);
+}
+
+function settings(confirming = false, syncMsg = null) {
+  const on = isOn(storage);
   screen(
     el('div', { class: 'row' }, el('h1', {}, '設定'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: home }, 'もどる')),
     el('div', { class: 'panel' },
@@ -482,8 +521,11 @@ function settings(confirming = false) {
         el('button', { class: 'small', onclick: () => { state = { ...state, sound: !state.sound }; persist(); settings(); } }, state.sound ? 'ON' : 'OFF'))),
     el('div', { class: 'panel' },
       el('h3', {}, '記録について'),
-      el('p', { class: 'muted' }, '記録はこの iPhone の中だけに保存されていて、インターネットには送られません。'),
+      on
+        ? el('p', { class: 'muted' }, 'ランク・カードなどの記録はこの iPhone の中に保存されています。解いた結果（日時・問題・答え・正誤）は、おうちの人の Google スプレッドシートにも送られて、苦手なところの勉強に使います。')
+        : el('p', { class: 'muted' }, '記録はこの iPhone の中だけに保存されていて、インターネットには送られません。'),
       el('p', { class: 'muted' }, 'Safari の「履歴とWebサイトデータを消去」をすると、記録も消えます。')),
+    syncPanel(syncMsg),
     el('div', { class: 'panel' },
       el('h3', {}, '記録を消す'),
       confirming
@@ -496,6 +538,11 @@ function settings(confirming = false) {
 }
 
 home();
+
+// ためてある結果を送る: 開いたとき・電波が戻ったとき・アプリに戻ってきたとき
+sendLater();
+window.addEventListener('online', sendLater);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sendLater(); });
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
