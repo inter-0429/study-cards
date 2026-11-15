@@ -23,7 +23,7 @@ function clone(v) {
 }
 
 export function createState() {
-  return { xp: 0, qs: {}, cards: [], days: { last: null, count: 0 }, enabled: null, sound: true };
+  return { xp: 0, qs: {}, cards: [], days: { last: null, count: 0 }, enabled: null, sound: true, bosses: {} };
 }
 
 export function rankFor(xp) {

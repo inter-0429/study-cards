@@ -1,6 +1,7 @@
 // 解いた結果を、保護者の Google スプレッドシートへ送る。
 // - 送り先（接続コード）が設定されていないときは、何もためず・何も送らない。
-// - 送るのは「解いた日時・問題番号・試験・形式・正誤・問題・正解・答え」だけ。名前や学校名は持っていない。
+// - 送るのは「解いた日時・問題番号・試験・形式・正誤・問題・正解・答え」と、
+//   「端末の名前・端末番号・端末の種類・かかった秒数」（どの端末で解いたかの確認用）だけ。名前や学校名は持っていない。
 // - 電波がないときは iPhone の中（localStorage）にためておき、つながったときに送る。
 // - 接続コード（送り先のアドレス＋合言葉）は公開のプログラムには書かず、iPhone の「設定」で貼り付ける。
 
@@ -69,7 +70,7 @@ function stamp(ms) {
 }
 const joinOrder = (q, idx) => idx.map(i => String(q.choices[i] ?? '?')).join(' → ');
 
-function correctText(q) {
+export function correctText(q) {
   if (q.type === 'choice') return String(q.choices[q.answer]);
   if (q.type === 'tf') return q.answer ? '○' : '×';
   if (q.type === 'order') return joinOrder(q, q.answer);
@@ -77,7 +78,7 @@ function correctText(q) {
 }
 
 // given: 4択=選んだ番号 / ○×=true・false / 並べ替え=押した順の番号の配列 / 入力=打った文字。答えていないときは null
-function givenText(q, v) {
+export function givenText(q, v) {
   if (v === null || v === undefined) return NONE;
   if (q.type === 'choice') return Number.isInteger(v) && q.choices[v] !== undefined ? String(q.choices[v]) : NONE;
   if (q.type === 'tf') return v === true ? '○' : v === false ? '×' : NONE;
@@ -87,7 +88,8 @@ function givenText(q, v) {
 }
 
 // subjectName（教科名）があれば、試験の欄の先頭に入れる（例: 化学 一次試験「コロイド」）
-export function makeRecord(q, unit, ok, given, now, subjectName = '') {
+// extra: どの端末から送られたか（withDevice）と、かかった秒数（sec）。なければ付けない
+export function makeRecord(q, unit, ok, given, now, subjectName = '', extra = {}) {
   const stage = unit ? `${unit.stage}「${unit.title}」` : '';
   return {
     at: stamp(now),
@@ -98,7 +100,87 @@ export function makeRecord(q, unit, ok, given, now, subjectName = '') {
     q: q.q,
     answer: correctText(q),
     given: givenText(q, given),
+    ...cleanExtra(extra),
   };
+}
+
+// ボス戦のまとめ1行。正誤＝撃破したか、問題＝「20問中17問正解」、正解の欄＝点数、答えの欄＝ごほうび
+// res は boss.js の judgeBoss の戻り値
+export function makeBossRecord(boss, res, correct, total, now, extra = {}) {
+  const label = boss.kind === 'subject' ? '教科ボス' : `${boss.unit.stage}のボス`;
+  return {
+    at: stamp(now),
+    id: boss.id,
+    stage: `${boss.subject.name} ${label}「${boss.name}」`,
+    type: 'ボス',
+    ok: !!res.passed,
+    q: `${total}問中${correct}問正解`,
+    answer: `${res.score}点`,
+    given: rewardText(res),
+    ...cleanExtra(extra),
+  };
+}
+
+export function rewardText(res) {
+  if (!res.passed) return 'ごほうびなし（不合格）';
+  if (res.reward > 0) return `${res.reward}円（${res.first ? '初めての撃破' : `${res.nth}回目の撃破`}）`;
+  return `0円（${res.nth}回目の撃破・今日はもらい済み）`;
+}
+
+// ---- どの端末から送られたか ----
+// dev = 端末の名前（設定でおうちの人がつける）、did = 端末ごとのランダム番号、ua = 端末の種類（iPhone・Safari など）
+// 名前や学校名は送らない。端末の種類は細かい情報（バージョンなど）を落として、大まかな種類だけにする
+export const DEVICE_NAME_KEY = 'hero-study-device-name';
+export const DEVICE_ID_KEY = 'hero-study-device-id';
+export const DEVICE_NAME_MAX = 20;
+const DID_RE = /^[a-f0-9]{12}$/;
+
+export function getDeviceName(s) { return cleanName(read(s, DEVICE_NAME_KEY)); }
+
+function cleanName(v) {
+  return String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, DEVICE_NAME_MAX);
+}
+
+// 空にすると名前なし。戻り値は保存した名前（保存できなければ null）
+export function setDeviceName(s, name) {
+  const v = cleanName(name);
+  return write(s, DEVICE_NAME_KEY, v) ? v : null;
+}
+
+// 端末ごとのランダム番号。なければ作って保存する（作れないときは空）
+export function deviceId(s, cryptoObj = globalThis.crypto) {
+  const cur = read(s, DEVICE_ID_KEY);
+  if (DID_RE.test(cur)) return cur;
+  try {
+    const b = new Uint8Array(6);
+    cryptoObj.getRandomValues(b);
+    const id = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return write(s, DEVICE_ID_KEY, id) ? id : '';
+  } catch { return ''; }
+}
+
+export function deviceKind(ua) {
+  const u = String(ua || '');
+  const dev = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? 'Android'
+    : /Macintosh/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'その他';
+  const br = /Line\//.test(u) ? 'LINE' : /EdgiOS|EdgA?\//.test(u) ? 'Edge' : /FxiOS|Firefox\//.test(u) ? 'Firefox'
+    : /CriOS|Chrome\//.test(u) ? 'Chrome' : /Safari\//.test(u) ? 'Safari' : 'その他';
+  return `${dev}・${br}`;
+}
+
+export function withDevice(s, ua, extra = {}) {
+  return { ...extra, dev: getDeviceName(s), did: deviceId(s), ua: deviceKind(ua) };
+}
+
+// 送ってよい形のものだけ残す
+function cleanExtra(x) {
+  const out = {};
+  if (!x || typeof x !== 'object') return out;
+  if (typeof x.dev === 'string') out.dev = cleanName(x.dev);
+  if (typeof x.did === 'string' && DID_RE.test(x.did)) out.did = x.did;
+  if (typeof x.ua === 'string') out.ua = x.ua.slice(0, 40);
+  if (Number.isFinite(x.sec) && x.sec >= 0) out.sec = Math.min(86400, Math.round(x.sec));
+  return out;
 }
 
 // ---- ためる・送る ----

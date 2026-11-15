@@ -5,7 +5,14 @@ import {
   unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits,
 } from './engine.js';
 import { load, save } from './store.js';
-import { makeRecord, enqueue, flush, pending, isOn, setConnection } from './sync.js';
+import {
+  makeRecord, makeBossRecord, enqueue, flush, pending, isOn, setConnection,
+  withDevice, getDeviceName, setDeviceName, deviceId, deviceKind, DEVICE_NAME_MAX, correctText, givenText,
+} from './sync.js';
+import {
+  bossesOf, pickBossQuestions, judgeBoss, nextReward, bossWins, BOSS_PASS, REWARD, BOSS_XP,
+} from './boss.js';
+import { SCORES, playScore } from './sound.js';
 import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
 
 const TIMED_SECONDS = 10;
@@ -21,6 +28,8 @@ function persist() { save(storage, state); }
 
 // 解いた結果を保護者のスプレッドシートへ送る（設定で接続コードを貼ったときだけ）
 function sendLater() { flush(storage).catch(() => {}); }
+// 送る記録に付ける「どの端末で解いたか」とかかった秒数（送る設定のときだけ。端末番号もそのとき作る）
+function sendExtra(sec) { return isOn(storage) ? withDevice(storage, navigator.userAgent, { sec }) : {}; }
 
 // ---- 小さな道具 ----
 function el(tag, attrs = {}, ...kids) {
@@ -53,10 +62,20 @@ function refreshDay() { state = touchDay(state, Date.now()); persist(); }
 
 // ---- 音（ファイルなし。その場で作る） ----
 let audio = null;
+function audioCtx() {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  if (audio.state === 'suspended') audio.resume().catch(() => {});
+  return audio;
+}
+// オリジナルのファンファーレ（rankUp: ランクアップ / boss: ボス撃破）
+function fanfare(kind) {
+  if (!state.sound) return;
+  try { playScore(audioCtx(), SCORES[kind]); } catch { /* 音が出せなくても続ける */ }
+}
 function beep(kind) {
   if (!state.sound) return;
   try {
-    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx();
     const notes = { ok: [660, 880], ng: [220, 160], up: [523, 659, 784, 1046], card: [880, 1175] }[kind] || [440];
     notes.forEach((f, i) => {
       const o = audio.createOscillator();
@@ -154,6 +173,8 @@ function subjectHome(S) {
     el('button', { class: 'secondary', disabled: noRange, onclick: () => startTraining(S) },
       v > 0 ? `特訓（15分）・ヴィラン ${v} 体` : '特訓（15分）'),
     el('p', { class: 'muted center note' }, 'まちがえた問題と苦手な試験を集中して復習。家で時間があるときに'),
+    el('button', { class: 'boss', onclick: () => bossList(S) }, `ボス戦（撃破 ${bossWins(state, S)} / ${bossesOf(S).length}）`),
+    el('p', { class: 'muted center note' }, `本番のテストの形。${BOSS_PASS}点以上で撃破するとごほうび`),
     el('div', { class: 'grid2' },
       el('button', { onclick: () => stages(S) }, 'ステージ'),
       el('button', { onclick: () => cards(S) }, `カード ${[...terms].filter(t => owned.has(t)).length}`),
@@ -184,6 +205,13 @@ const HELP = [
     '並べ替え：問題文の順番（古い順・小さい順など）にタップして「決定」。',
     '入力：答えを打ちこんで「決定」。漢字でも、ひらがなでもOK。思い出せないときは「わからない」。',
     '「時間制限」と出た問題は10秒以内に正解するとボーナス +5。',
+  ]],
+  ['ボス戦（本番のテストの形）', [
+    '教科を開いて「ボス戦」。試験ごとの「単元ボス」（20問）と、教科全体の「教科ボス」（40問）がいる。',
+    `答えても正解・不正解は出ず、最後にまとめて採点。${BOSS_PASS}点以上で撃破！ 時間制限はなし。`,
+    `ごほうび：単元ボスは初めて倒すと${REWARD.unit.first}円、2回目からは${REWARD.unit.again}円。教科ボスは初めて${REWARD.subject.first}円、2回目からは${REWARD.subject.again}円。`,
+    '2回目からのごほうびは、同じボスで1日1回まで（挑戦は何回でもできる）。倒したらおうちの人に見せてね。',
+    `撃破すると経験値ボーナス（単元ボス +${BOSS_XP.unit}、教科ボス +${BOSS_XP.subject}）。途中で「やめる」と、その回は記録されない。`,
   ]],
   ['ヴィラン（苦手な問題）', [
     '同じ問題を2回まちがえると、その問題が「ヴィラン」になります。',
@@ -219,8 +247,9 @@ function startQuiz(mode, questions, opts = {}) {
   if (!questions.length) { if (opts.subject) subjectHome(opts.subject); else home(); return; }
   const subject = opts.subject || subjectOfUnit(questions[0].unit);
   session = {
-    mode, questions, subject, idx: 0, timedIdx: pickTimedIndex(questions), retried: false,
+    mode, questions, subject, idx: 0, timedIdx: mode === 'boss' ? -1 : pickTimedIndex(questions), retried: false,
     xp: 0, combo: 0, maxCombo: 0, newCards: [], defeated: 0, born: 0, rankUp: null, correct: 0,
+    answers: [], startedAt: Date.now(), // ボス戦: 答えをためておき、最後にまとめて採点する
     label: opts.label || (mode === 'mission' ? `${subject.name} 今日のミッション` : ''), onDone: opts.onDone || result,
   };
   showQuestion();
@@ -235,6 +264,9 @@ function showQuestion() {
   let answered = false;
   let timer = null;
   let focusEl = null;
+  const shownAt = Date.now();
+  // ボス戦は答えるとすぐ次の問題になるので、2回タップが次の問題の答えにならないよう、出した直後は少し受け付けない
+  const BOSS_GUARD_MS = 400;
 
   const fb = el('div');
   const area = el('div');
@@ -243,12 +275,20 @@ function showQuestion() {
   // given: 子どもの答え（4択=番号・○×=true/false・並べ替え=押した順・入力=文字）。答えていないときは null
   function finish(ok, showCorrect, given) {
     if (answered) return;
+    if (s.mode === 'boss' && Date.now() - shownAt < BOSS_GUARD_MS) return;
     answered = true;
     stopTimer();
+    const sec = (Date.now() - shownAt) / 1000;
+    if (s.mode === 'boss') {
+      // 正誤は見せずに次へ。記録は最後にまとめて（途中でやめたら何も記録しない）
+      s.answers.push({ q, ok, given: given ?? null, sec, at: Date.now() });
+      next();
+      return;
+    }
     refreshDay();
     const r = recordAnswer(state, q, ok, { timed: timed && ok, now: Date.now() });
     state = r.state; persist();
-    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now(), subjectOfUnit(q.unit)?.name));
+    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now(), subjectOfUnit(q.unit)?.name, sendExtra(sec)));
     sendLater();
     for (const e of r.events) {
       if (e.type === 'xp') s.xp += e.amount;
@@ -351,9 +391,17 @@ function showQuestion() {
       el('span', { class: 'badge' }, s.label || unit.stage),
       el('span', { class: 'spacer' }),
       el('span', { class: 'muted' }, `${s.idx + 1} / ${s.questions.length}`),
-      el('button', { class: 'small ghost', onclick: () => { stopTimer(); subjectHome(s.subject); } }, 'やめる')),
+      el('button', { class: 'small ghost', onclick: () => {
+        if (s.mode === 'boss') {
+          if (!window.confirm('ボス戦をやめる？ この回の答えは記録されません。')) return;
+          bossList(s.subject);
+          return;
+        }
+        stopTimer(); subjectHome(s.subject);
+      } }, 'やめる')),
     el('p', { class: 'muted' }, `${s.subject.name} ${unit.stage}「${unit.title}」`,
       rec?.villain ? ' ' : null, rec?.villain ? el('span', { class: 'badge villain' }, 'ヴィラン') : null),
+    s.mode === 'boss' ? el('div', { class: 'bar boss' }, el('span', { style: `width:${pct(s.idx / s.questions.length)}%` })) : null,
     timed ? el('div', {}, el('p', { class: 'badge gold' }, `時間制限 ${TIMED_SECONDS}秒・ボーナス+5`), el('div', { class: 'bar timer' }, timerBar)) : null,
     el('div', { class: 'qtext' }, q.q),
     area, fb,
@@ -395,7 +443,7 @@ function showQuestion() {
 }
 
 function result(s) {
-  if (s.rankUp) beep('up'); else if (s.newCards.length) beep('card');
+  if (s.rankUp) fanfare('rankUp'); else if (s.newCards.length) beep('card');
   screen(
     el('h1', { class: 'center' }, s.correct === s.questions.length ? '全問正解！' : 'ミッション完了'),
     s.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, s.rankUp)) : null,
@@ -488,7 +536,7 @@ function startTraining(S) {
 }
 
 function trainingResult(t, before, S) {
-  if (t.rankUp) beep('up');
+  if (t.rankUp) fanfare('rankUp');
   const left = villainCount(S);
   screen(
     el('h1', { class: 'center' }, '特訓おつかれさま！'),
@@ -501,6 +549,141 @@ function trainingResult(t, before, S) {
     t.newCards.length ? el('div', { class: 'panel' }, el('h3', {}, '新しいカード'),
       el('div', { class: 'cardgrid' }, t.newCards.map(c => el('div', { class: 'card pop' }, c)))) : null,
     el('button', { class: 'primary', onclick: () => subjectHome(S) }, `${S.name}の画面へ`),
+  );
+}
+
+// ---- ボス戦 ----
+const yen = n => `${n}円`;
+function rewardLabel(b) {
+  const nr = nextReward(state, b, Date.now());
+  if (nr.first) return `ごほうび ${yen(nr.amount)}（初めて倒したとき）`;
+  if (nr.today) return `今日のごほうびはもらい済み（明日からまた ${yen(REWARD[b.kind].again)}）`;
+  return `ごほうび ${yen(nr.amount)}（今日まだ倒していない）`;
+}
+const bossRec = b => (state.bosses || {})[b.id] || { tries: 0, wins: 0, best: 0 };
+const bossSize = (b, S) => pickBossQuestions(b, S.questions, state, () => 0).length;
+
+function bossPanel(b, S) {
+  const r = bossRec(b);
+  const n = bossSize(b, S);
+  const head = b.kind === 'subject' ? '教科ボス' : `${b.unit.stage}のボス`;
+  return el('div', { class: `panel bosscard ${b.kind}` },
+    el('div', { class: 'row' },
+      el('span', { class: 'badge' }, head),
+      el('span', { class: 'spacer' }),
+      r.wins ? el('span', { class: 'badge gold' }, `撃破 ${r.wins}回`) : el('span', { class: 'badge off' }, '未撃破')),
+    el('h3', { class: 'mt' }, `「${b.name}」`),
+    b.kind === 'unit' ? el('p', { class: 'muted' }, b.unit.title) : null,
+    el('p', {}, `${n}問・${BOSS_PASS}点以上で撃破`),
+    el('p', { class: 'reward' }, rewardLabel(b)),
+    r.tries ? el('p', { class: 'muted' }, `最高 ${r.best}点・挑戦 ${r.tries}回`) : null,
+    n === 0 ? el('p', { class: 'muted' }, '範囲に入っている試験がありません。「ステージ」で選んでください。') : null,
+    el('button', { class: b.kind === 'subject' ? 'boss' : 'small', disabled: n === 0, onclick: () => bossIntro(b, S) }, '挑戦する'));
+}
+
+function bossList(S) {
+  refreshDay();
+  const [main, ...units] = bossesOf(S);
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, `${S.name}のボス`), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: () => subjectHome(S) }, 'もどる')),
+    el('p', { class: 'muted' }, `本番のテストの形。答えても正解は出ず、最後にまとめて採点。${BOSS_PASS}点以上で撃破！ 撃破 ${bossWins(state, S)} / ${units.length + 1}`),
+    bossPanel(main, S),
+    el('h2', { class: 'mt' }, '単元ボス'),
+    units.map(b => bossPanel(b, S)),
+    el('button', { onclick: () => subjectHome(S) }, `${S.name}の画面へ`),
+  );
+}
+
+function bossIntro(b, S) {
+  const n = bossSize(b, S);
+  if (!n) { bossList(S); return; }
+  screen(
+    el('span', { class: 'badge' }, b.kind === 'subject' ? `${S.name}の教科ボス` : `${S.name} ${b.unit.stage}のボス`),
+    el('h1', { class: 'mt bossname' }, `「${b.name}」があらわれた！`),
+    el('div', { class: 'panel' },
+      el('p', {}, `問題 ${n}問。${BOSS_PASS}点以上で撃破。`),
+      el('p', {}, '答えても正解・不正解は出ない。最後にまとめて採点するよ。時間制限はなし。'),
+      el('p', { class: 'reward' }, rewardLabel(b)),
+      el('p', { class: 'muted' }, '途中で「やめる」と、この回は記録されない。')),
+    el('button', { class: 'boss', onclick: () => {
+      const qs = pickBossQuestions(b, S.questions, state);
+      startQuiz('boss', qs, { subject: S, label: `ボス「${b.name}」`, onDone: s => bossResult(b, S, s) });
+    } }, '挑戦する'),
+    el('div', { class: 'mt' }),
+    el('button', { onclick: () => bossList(S) }, 'もどる'),
+  );
+}
+
+const mmss = sec => `${Math.floor(sec / 60)}分${String(Math.round(sec % 60)).padStart(2, '0')}秒`;
+
+function bossResult(b, S, s) {
+  refreshDay();
+  const now = Date.now();
+  const rankBefore = rankFor(state.xp).name;
+  let xp = 0, born = 0, defeated = 0;
+  const newCards = [];
+  // 答えた問題は、ふだんと同じく正誤の記録（得意・苦手・ヴィラン）と経験値に入れ、1問ずつ送る
+  for (const a of s.answers) {
+    const r = recordAnswer(state, a.q, a.ok, { now });
+    state = r.state;
+    for (const e of r.events) {
+      if (e.type === 'xp') xp += e.amount;
+      if (e.type === 'card') newCards.push(e.term);
+      if (e.type === 'villainBorn') born++;
+      if (e.type === 'villainDefeated') defeated++;
+    }
+    enqueue(storage, makeRecord(a.q, unitById(a.q.unit), a.ok, a.given, a.at || now, S.name, sendExtra(a.sec)));
+  }
+  const total = s.answers.length;
+  const correct = s.answers.filter(a => a.ok).length;
+  const spent = (now - s.startedAt) / 1000;
+  const j = judgeBoss(state, b, correct, total, now);
+  state = j.state;
+  persist();
+  enqueue(storage, makeBossRecord(b, j, correct, total, now, sendExtra(spent)));
+  sendLater();
+  xp += j.xp;
+  const rankAfter = rankFor(state.xp).name;
+  const rankUp = rankAfter !== rankBefore ? rankAfter : null;
+  if (j.passed) fanfare('boss'); else if (rankUp) fanfare('rankUp');
+
+  const wrong = s.answers.filter(a => !a.ok);
+  const need = Math.max(0, Math.ceil((BOSS_PASS * total) / 100 - 1e-9) - correct);
+  screen(
+    el('div', { class: `panel center ${j.passed ? 'win pop' : 'lose'}` },
+      el('div', { class: 'muted' }, `「${b.name}」`),
+      el('div', { class: 'score' }, `${j.score}点`),
+      el('div', { class: 'big' }, j.passed ? '撃破！' : '不合格…'),
+      el('p', {}, `正解 ${correct} / ${total}・かかった時間 ${mmss(spent)}`),
+      el('p', { class: 'muted' }, `最高 ${j.best}点`)),
+    j.passed
+      ? el('div', { class: 'panel reward-panel pop' },
+        j.reward > 0
+          ? [el('div', { class: 'big' }, `ごほうび ${yen(j.reward)}`),
+            el('p', {}, j.first ? '初めての撃破！ おうちの人にこの画面を見せてね。' : `${j.nth}回目の撃破！ おうちの人にこの画面を見せてね。`)]
+          : [el('p', {}, `${j.nth}回目の撃破！ でも今日のごほうびはもうもらっているよ。`),
+            el('p', { class: 'muted' }, `明日また倒すと ${yen(REWARD[b.kind].again)}。`)])
+      : el('div', { class: 'panel' }, el('p', {}, need > 0 ? `あと ${need}問 正解で撃破（${BOSS_PASS}点）だった！` : 'おしい！'), el('p', { class: 'muted' }, 'まちがえた問題を見直して、もう一度挑戦しよう。')),
+    rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, rankUp)) : null,
+    el('div', { class: 'panel' },
+      el('p', {}, `獲得経験値 +${xp}${j.xp ? `（撃破ボーナス +${j.xp} を含む）` : ''}`),
+      defeated ? el('p', {}, el('span', { class: 'badge villain' }, `ヴィラン撃破 ${defeated} 体`)) : null,
+      born ? el('p', { class: 'muted' }, `新しいヴィラン ${born} 体。特訓で倒そう`) : null),
+    newCards.length ? el('div', { class: 'panel' }, el('h3', {}, '新しいカード'),
+      el('div', { class: 'cardgrid' }, newCards.map(c => el('div', { class: 'card pop' }, c)))) : null,
+    wrong.length ? el('div', { class: 'panel' },
+      el('h3', {}, `まちがえた問題（${wrong.length}問）`),
+      wrong.map(a => el('div', { class: 'review' },
+        el('p', { class: 'muted' }, `${unitById(a.q.unit).stage}「${unitById(a.q.unit).title}」`),
+        el('p', { class: 'rq' }, a.q.q),
+        el('p', {}, '正解：', el('b', { class: 'okText' }, correctText(a.q))),
+        el('p', {}, 'きみの答え：', el('span', { class: 'ngText' }, givenText(a.q, a.given))),
+        a.q.exp ? el('p', { class: 'muted' }, a.q.exp) : null))) : el('div', { class: 'panel center' }, el('p', {}, '全問正解！')),
+    el('button', { class: 'boss', onclick: () => bossIntro(b, S) }, 'もう一度挑戦'),
+    el('div', { class: 'mt' }),
+    el('button', { onclick: () => bossList(S) }, 'ボスの一覧へ'),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'ghost', onclick: () => subjectHome(S) }, `${S.name}の画面へ`),
   );
 }
 
@@ -563,11 +746,30 @@ function syncPanel(msg) {
     el('p', { class: 'muted' }, on
       ? `今は送る設定です。まだ送れていない記録：${pending(storage).length} 件（電波が戻ると自動で送ります）`
       : '今は送らない設定です。'),
-    el('p', { class: 'muted' }, '送るのは、解いた日時・問題・正解・答え・正誤だけです。名前や学校名は送りません。'),
+    el('p', { class: 'muted' }, '送るのは、解いた日時・問題・正解・答え・正誤・ボス戦の点数とごほうび、どの端末で解いたか（下の名前・番号・種類）、かかった秒数だけです。名前や学校名は送りません。'),
     msg ? el('p', {}, msg) : null,
     box,
     el('div', { class: 'row mt' }, saveBtn),
-    on ? el('button', { class: 'small ghost mt', onclick: () => settings(false, SYNC_MSG[setConnection(storage, '')]) }, '送るのをやめる') : null);
+    on ? el('button', { class: 'small ghost mt', onclick: () => settings(false, SYNC_MSG[setConnection(storage, '')]) }, '送るのをやめる') : null,
+    on ? devicePanel() : null);
+}
+
+// この端末の名前（おうちの人がつける）。結果といっしょに送り、どの端末で解いたかを確かめる
+function devicePanel() {
+  const box = el('input', {
+    type: 'text', class: 'answer', placeholder: '例: 自分のiPhone', autocomplete: 'off',
+    autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: String(DEVICE_NAME_MAX),
+    value: getDeviceName(storage),
+  });
+  const kind = deviceKind(navigator.userAgent);
+  return el('div', { class: 'mt' },
+    el('h3', { class: 'mt' }, 'この端末の名前'),
+    el('p', { class: 'muted' }, `結果といっしょに、端末の名前・端末番号（${deviceId(storage) || 'なし'}）・端末の種類（${kind}）・1問にかかった秒数を送ります。名前は${DEVICE_NAME_MAX}文字まで。本名は入れないでください。`),
+    box,
+    el('div', { class: 'row mt' }, el('button', { class: 'small', onclick: () => {
+      const v = setDeviceName(storage, box.value);
+      settings(false, v === null ? '端末の名前を保存できませんでした。' : v ? `端末の名前を「${v}」にしました。` : '端末の名前を消しました。');
+    } }, '名前を保存')));
 }
 
 function settings(confirming = false, syncMsg = null) {
@@ -588,8 +790,10 @@ function settings(confirming = false, syncMsg = null) {
       el('h3', {}, '記録を消す'),
       confirming
         ? [el('p', {}, '本当に消す？ ランク・カード・ヴィランが全部はじめからになります。'),
+          el('p', { class: 'muted' }, 'ボス戦の撃破とごほうびの記録は消えずに残ります。'),
           el('div', { class: 'grid2' },
-            el('button', { class: 'danger', onclick: () => { state = touchDay(createState(), Date.now()); persist(); home(); } }, '消す'),
+            // ボスの記録は残す（消して倒し直すと「初めての撃破」のごほうびがまた出てしまうため）
+            el('button', { class: 'danger', onclick: () => { state = touchDay({ ...createState(), bosses: state.bosses || {} }, Date.now()); persist(); home(); } }, '消す'),
             el('button', { onclick: () => settings(false) }, 'やめる'))]
         : el('button', { class: 'small', onclick: () => settings(true) }, '記録を消す…')),
   );
