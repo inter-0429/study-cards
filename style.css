@@ -108,6 +108,21 @@ button.picked { border-color: var(--gold); }
 .shake { animation: shake 0.35s; }
 @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 .danger { background: #8a1f2b; }
+/* ボス戦 */
+button.boss { background: linear-gradient(135deg, #7b2cff, #c04cff); border-color: #d98cff; font-weight: 700; font-size: 18px; min-height: 56px; }
+.bosscard.subject { border: 2px solid #d98cff; }
+.bossname { font-size: 24px; color: #e8c2ff; }
+.reward { color: var(--gold2); font-weight: 700; }
+.bar.boss > span { background: #c04cff; }
+.score { font-size: 64px; font-weight: 900; line-height: 1.1; margin: 4px 0; }
+.win { border: 3px solid var(--gold); background: linear-gradient(180deg, #3a2a8a, var(--panel)); }
+.win .score { color: var(--gold2); }
+.lose { border: 2px solid rgba(255, 255, 255, 0.2); }
+.reward-panel { text-align: center; border: 2px solid var(--gold); }
+.review { border-top: 1px solid rgba(255, 255, 255, 0.15); padding-top: 8px; margin-top: 8px; }
+.review .rq { font-weight: 700; }
+.okText { color: var(--ok); }
+.ngText { color: #ff9aa4; }
 .center { text-align: center; }
 .mt { margin-top: 12px; }
 input.answer {
