@@ -1,5 +1,5 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
-const CACHE = 'hero-study-v2';
+const CACHE = 'hero-study-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './js/app.js',
   './js/engine.js',
   './js/store.js',
+  './js/sync.js',
   './data/index.js',
   './data/units.js',
   './data/u01.js',
