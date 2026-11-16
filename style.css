@@ -111,6 +111,8 @@ button.picked { border-color: var(--gold); }
 /* ボス戦 */
 button.boss { background: linear-gradient(135deg, #7b2cff, #c04cff); border-color: #d98cff; font-weight: 700; font-size: 18px; min-height: 56px; }
 .bosscard.subject { border: 2px solid #d98cff; }
+.bosscard.ura { border: 2px solid #ff5f7e; background: linear-gradient(160deg, rgba(255, 95, 126, 0.16), rgba(20, 10, 40, 0.4)); }
+.bosscard.ura.locked { border-style: dashed; opacity: 0.7; background: none; }
 .bossname { font-size: 24px; color: #e8c2ff; }
 .reward { color: var(--gold2); font-weight: 700; }
 .bar.boss > span { background: #c04cff; }
