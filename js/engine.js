@@ -127,6 +127,8 @@ export function pickMission(state, questions, rng = Math.random) {
 export function normalizeAnswer(text) {
   return String(text ?? '')
     .normalize('NFKC')
+    // 常用漢字の字体と、よく変換で出る字体をそろえる（充塡・充填 など）
+    .replace(/[塡剝頰]/g, c => ({ 塡: '填', 剝: '剥', 頰: '頬' })[c])
     .toLowerCase()
     .replace(/[ァ-ヴ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
     .replace(/[ゕゖヵヶ]/g, 'か')
@@ -135,9 +137,27 @@ export function normalizeAnswer(text) {
     .replace(/[\s・･·.,、。，．「」『』"'=＝]/g, '');
 }
 
+// まぜ書きの形を全部作る。spec の書き方は data/yomi.js の説明のとおり
+const YOMI_MAX = 4096;
+const yomiCache = new Map();
+export function expandYomi(spec) {
+  if (yomiCache.has(spec)) return yomiCache.get(spec);
+  let forms = [''];
+  for (const tok of String(spec).split(' ').filter(Boolean)) {
+    const i = tok.indexOf('|');
+    const opts = i < 0 ? [tok] : [tok.slice(0, i), ...tok.slice(i + 1).split('/')];
+    forms = forms.flatMap(f => opts.map(o => f + o));
+    if (forms.length > YOMI_MAX) break; // 長すぎる指定でも固まらない
+  }
+  const out = new Set(forms.slice(0, YOMI_MAX).map(normalizeAnswer));
+  yomiCache.set(spec, out);
+  return out;
+}
+
 export function checkInput(q, text) {
   const t = normalizeAnswer(text);
-  return t.length > 0 && q.answers.some(a => normalizeAnswer(a) === t);
+  if (!t.length) return false;
+  return q.answers.some(a => normalizeAnswer(a) === t) || (q.yomi || []).some(spec => expandYomi(spec).has(t));
 }
 
 // 時間制限つきにする問題の位置。並べ替え・入力は操作が多く、計算問題は考える時間がいるので対象外。なければ -1
