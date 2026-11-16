@@ -1,6 +1,6 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
-// v12: 数学Ⅰを足した（data/suugaku/）
-const CACHE = 'hero-study-v12';
+// v13: 数学Aを足した（data/suugakua/）
+const CACHE = 'hero-study-v13';
 const ASSETS = [
   './',
   './index.html',
@@ -35,6 +35,7 @@ const ASSETS = [
   './data/why/seibutsu.js',
   './data/why/butsuri.js',
   './data/why/suugaku.js',
+  './data/why/suugakua.js',
   './data/kagaku/units.js',
   './data/kagaku/index.js',
   './data/kagaku/k01.js',
@@ -66,6 +67,17 @@ const ASSETS = [
   './data/suugaku/m07.js',
   './data/suugaku/m08.js',
   './data/suugaku/m09.js',
+  './data/suugakua/units.js',
+  './data/suugakua/index.js',
+  './data/suugakua/a01.js',
+  './data/suugakua/a02.js',
+  './data/suugakua/a03.js',
+  './data/suugakua/a04.js',
+  './data/suugakua/a05.js',
+  './data/suugakua/a06.js',
+  './data/suugakua/a07.js',
+  './data/suugakua/a08.js',
+  './data/suugakua/a09.js',
 ];
 
 self.addEventListener('install', (e) => {
