@@ -4,5 +4,6 @@ import { WHY as KAGAKU } from './kagaku.js';
 import { WHY as SEIBUTSU } from './seibutsu.js';
 import { WHY as BUTSURI } from './butsuri.js';
 import { WHY as SUUGAKU } from './suugaku.js';
+import { WHY as SUUGAKUA } from './suugakua.js';
 
-export const WHY = { ...REKISHI, ...KAGAKU, ...SEIBUTSU, ...BUTSURI, ...SUUGAKU };
+export const WHY = { ...REKISHI, ...KAGAKU, ...SEIBUTSU, ...BUTSURI, ...SUUGAKU, ...SUUGAKUA };
