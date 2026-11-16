@@ -1,6 +1,6 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
-// v9: 入力問題の「まぜ書き」（骨ずい など）も正解にした（data/yomi.js）
-const CACHE = 'hero-study-v9';
+// v10: 選択問題でまちがえたとき「選んだ答えがなぜちがうか」を出す（data/why/）
+const CACHE = 'hero-study-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -28,6 +28,11 @@ const ASSETS = [
   './data/u09.js',
   './data/subjects.js',
   './data/yomi.js',
+  './data/why/index.js',
+  './data/why/rekishi.js',
+  './data/why/kagaku.js',
+  './data/why/seibutsu.js',
+  './data/why/butsuri.js',
   './data/kagaku/units.js',
   './data/kagaku/index.js',
   './data/kagaku/k01.js',

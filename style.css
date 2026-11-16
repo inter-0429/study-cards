@@ -121,6 +121,9 @@ button.boss { background: linear-gradient(135deg, #7b2cff, #c04cff); border-colo
 .reward-panel { text-align: center; border: 2px solid var(--gold); }
 .review { border-top: 1px solid rgba(255, 255, 255, 0.15); padding-top: 8px; margin-top: 8px; }
 .review .rq { font-weight: 700; }
+.why { text-align: left; background: rgba(255, 154, 164, 0.10); border-left: 4px solid #ff9aa4; border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.why p { margin: 4px 0 0; }
+.whyHead { font-weight: 700; color: #ff9aa4; font-size: 0.92em; }
 .okText { color: var(--ok); }
 .ngText { color: #ff9aa4; }
 .center { text-align: center; }
