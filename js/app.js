@@ -2,7 +2,7 @@
 import {
   createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickTimedIndex,
   pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput,
-  unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits,
+  unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits, whyWrong,
 } from './engine.js';
 import { load, save } from './store.js';
 import {
@@ -59,6 +59,11 @@ const enabledUnits = S => S.units.filter(u => isEnabled(state, u.id));
 const pct = x => Math.round(x * 100);
 // 開きっぱなしで日をまたいでも連続日数を正しく数える
 function refreshDay() { state = touchDay(state, Date.now()); persist(); }
+// 選択問題でまちがえたとき、選んだ選択肢が「なぜちがうか」の枠。出せないときは null
+function whyBox(q, given) {
+  const t = whyWrong(q, given);
+  return t ? el('div', { class: 'why' }, el('div', { class: 'whyHead' }, `「${q.choices[given]}」がちがう理由`), el('p', {}, t)) : null;
+}
 
 // ---- 音（ファイルなし。その場で作る） ----
 let audio = null;
@@ -306,6 +311,7 @@ function showQuestion() {
       el('div', { class: 'big' }, ok ? (s.combo >= 3 ? `○ ${s.combo}コンボ！` : '○ 正解！') : '× ざんねん'),
       defeated ? el('p', {}, el('span', { class: 'badge villain' }, 'ヴィラン撃破！ +30')) : null,
       born ? el('p', {}, el('span', { class: 'badge villain' }, 'この問題がヴィランになった…次で倒そう')) : null,
+      whyBox(q, given),
       el('p', {}, q.exp),
       el('button', { class: 'primary mt', onclick: next }, s.idx + 1 < s.questions.length ? '次へ' : '結果を見る')));
     fb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -678,6 +684,7 @@ function bossResult(b, S, s) {
         el('p', { class: 'rq' }, a.q.q),
         el('p', {}, '正解：', el('b', { class: 'okText' }, correctText(a.q))),
         el('p', {}, 'きみの答え：', el('span', { class: 'ngText' }, givenText(a.q, a.given))),
+        whyBox(a.q, a.given),
         a.q.exp ? el('p', { class: 'muted' }, a.q.exp) : null))) : el('div', { class: 'panel center' }, el('p', {}, '全問正解！')),
     el('button', { class: 'boss', onclick: () => bossIntro(b, S) }, 'もう一度挑戦'),
     el('div', { class: 'mt' }),

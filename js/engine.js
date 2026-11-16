@@ -278,3 +278,10 @@ export function touchDay(state, now = Date.now()) {
   s.days = { last: today, count: s.days.last === dayBefore(today) ? s.days.count + 1 : 1 };
   return s;
 }
+
+// 選択問題でまちがえた選択肢を選んだとき、その選択肢が「なぜちがうか」。出せないときは null
+export function whyWrong(q, given) {
+  if (!q || q.type !== 'choice' || !Number.isInteger(given) || given === q.answer) return null;
+  const t = Array.isArray(q.why) ? q.why[given] : null;
+  return typeof t === 'string' && t ? t : null;
+}
