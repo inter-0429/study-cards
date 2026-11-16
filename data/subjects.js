@@ -13,6 +13,8 @@ import { UNITS as SUUGAKUA_UNITS } from './suugakua/units.js';
 import { QUESTIONS as SUUGAKUA_QS } from './suugakua/index.js';
 import { UNITS as SUUGAKU2_UNITS } from './suugaku2/units.js';
 import { QUESTIONS as SUUGAKU2_QS } from './suugaku2/index.js';
+import { UNITS as CHIRI_UNITS } from './chiri/units.js';
+import { QUESTIONS as CHIRI_QS } from './chiri/index.js';
 import { YOMI } from './yomi.js';
 import { WHY } from './why/index.js';
 
@@ -24,6 +26,7 @@ export const SUBJECTS = [
   { id: 'suugaku', name: '数学Ⅰ', units: SUUGAKU_UNITS, questions: SUUGAKU_QS, fields: ['用語', '性質', '計算'] },
   { id: 'suugakua', name: '数学A', units: SUUGAKUA_UNITS, questions: SUUGAKUA_QS, fields: ['用語', '性質', '計算'] },
   { id: 'suugaku2', name: '数学Ⅱ', units: SUUGAKU2_UNITS, questions: SUUGAKU2_QS, fields: ['用語', '性質', '計算'] },
+  { id: 'chiri', name: '地理総合', units: CHIRI_UNITS, questions: CHIRI_QS, fields: ['用語', 'しくみ', '地域', '統計'] },
 ];
 
 export const ALL_UNITS = SUBJECTS.flatMap(s => s.units);
