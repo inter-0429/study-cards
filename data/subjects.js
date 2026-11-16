@@ -7,6 +7,8 @@ import { UNITS as SEIBUTSU_UNITS } from './seibutsu/units.js';
 import { QUESTIONS as SEIBUTSU_QS } from './seibutsu/index.js';
 import { UNITS as BUTSURI_UNITS } from './butsuri/units.js';
 import { QUESTIONS as BUTSURI_QS } from './butsuri/index.js';
+import { UNITS as SUUGAKU_UNITS } from './suugaku/units.js';
+import { QUESTIONS as SUUGAKU_QS } from './suugaku/index.js';
 import { YOMI } from './yomi.js';
 import { WHY } from './why/index.js';
 
@@ -15,6 +17,7 @@ export const SUBJECTS = [
   { id: 'kagaku', name: '化学', units: KAGAKU_UNITS, questions: KAGAKU_QS, fields: ['用語', '現象', '構造', '計算'] },
   { id: 'seibutsu', name: '生物基礎', units: SEIBUTSU_UNITS, questions: SEIBUTSU_QS, fields: ['用語', 'しくみ', '細胞', '病気'] },
   { id: 'butsuri', name: '物理基礎', units: BUTSURI_UNITS, questions: BUTSURI_QS, fields: ['用語', '法則', '計算'] },
+  { id: 'suugaku', name: '数学Ⅰ', units: SUUGAKU_UNITS, questions: SUUGAKU_QS, fields: ['用語', '性質', '計算'] },
 ];
 
 export const ALL_UNITS = SUBJECTS.flatMap(s => s.units);
