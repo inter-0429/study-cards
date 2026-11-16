@@ -8,6 +8,7 @@ import { QUESTIONS as SEIBUTSU_QS } from './seibutsu/index.js';
 import { UNITS as BUTSURI_UNITS } from './butsuri/units.js';
 import { QUESTIONS as BUTSURI_QS } from './butsuri/index.js';
 import { YOMI } from './yomi.js';
+import { WHY } from './why/index.js';
 
 export const SUBJECTS = [
   { id: 'rekishi', name: '歴史総合', units: REKISHI_UNITS, questions: REKISHI_QS, fields: ['政治', '外交', '戦争', '経済', '社会'] },
@@ -21,5 +22,7 @@ export const ALL_QS = SUBJECTS.flatMap(s => s.questions);
 
 // 入力問題の「まぜ書き」（骨ずい など）も正解にするための読み（data/yomi.js）を問題に付ける
 for (const q of ALL_QS) if (YOMI[q.id]) q.yomi = YOMI[q.id];
+// 選択問題の「まちがえた選択肢の理由」（選択肢の順番どおり。正解の位置は null）
+for (const q of ALL_QS) if (WHY[q.id]) q.why = WHY[q.id];
 export const subjectById = id => SUBJECTS.find(s => s.id === id);
 export const subjectOfUnit = unitId => SUBJECTS.find(s => s.units.some(u => u.id === unitId));
