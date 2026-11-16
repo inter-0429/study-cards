@@ -1,4 +1,5 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
+// v9: 入力問題の「まぜ書き」（骨ずい など）も正解にした（data/yomi.js）
 const CACHE = 'hero-study-v9';
 const ASSETS = [
   './',
