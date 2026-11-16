@@ -27,7 +27,7 @@ const isCount = v => Number.isInteger(v) && v >= 0;
 function cleanBosses(raw) {
   const out = {};
   for (const [id, r] of Object.entries(raw)) {
-    if (!/^boss-[a-z0-9]{1,20}$/.test(id) || !isObj(r)) continue;
+    if (!/^(boss|ura)-[a-z0-9]{1,20}$/.test(id) || !isObj(r)) continue;
     if (!isCount(r.tries) || !isCount(r.wins) || r.wins > r.tries) continue;
     if (typeof r.best !== 'number' || !(r.best >= 0 && r.best <= 100)) continue;
     if (!(r.rewardDay === null || (typeof r.rewardDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.rewardDay)))) continue;

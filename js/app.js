@@ -11,6 +11,7 @@ import {
 } from './sync.js';
 import {
   bossesOf, pickBossQuestions, judgeBoss, nextReward, bossWins, BOSS_PASS, REWARD, BOSS_XP,
+  urasOf, uraOpen,
 } from './boss.js';
 import { SCORES, playScore } from './sound.js';
 import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
@@ -561,6 +562,7 @@ function trainingResult(t, before, S) {
 // ---- ボス戦 ----
 const yen = n => `${n}円`;
 function rewardLabel(b) {
+  if (b.ura) return 'ごほうびは、おうちの人と決めてね';
   const nr = nextReward(state, b, Date.now());
   if (nr.first) return `ごほうび ${yen(nr.amount)}（初めて倒したとき）`;
   if (nr.today) return `今日のごほうびはもらい済み（明日からまた ${yen(REWARD[b.kind].again)}）`;
@@ -572,19 +574,25 @@ const bossSize = (b, S) => pickBossQuestions(b, S.questions, state, () => 0).len
 function bossPanel(b, S) {
   const r = bossRec(b);
   const n = bossSize(b, S);
-  const head = b.kind === 'subject' ? '教科ボス' : `${b.unit.stage}のボス`;
-  return el('div', { class: `panel bosscard ${b.kind}` },
+  const head = (b.ura ? '裏・' : '') + (b.kind === 'subject' ? '教科ボス' : `${b.unit.stage}のボス`);
+  if (b.ura && !uraOpen(state, b)) {
+    return el('div', { class: 'panel bosscard ura locked' },
+      el('div', { class: 'row' }, el('span', { class: 'badge' }, head), el('span', { class: 'spacer' }), el('span', { class: 'badge off' }, 'まだ出てこない')),
+      el('h3', { class: 'mt' }, '「？？？」'),
+      el('p', { class: 'muted' }, `ふつうのボスを1回倒すと出てくる。`));
+  }
+  return el('div', { class: `panel bosscard ${b.kind}${b.ura ? ' ura' : ''}` },
     el('div', { class: 'row' },
       el('span', { class: 'badge' }, head),
       el('span', { class: 'spacer' }),
       r.wins ? el('span', { class: 'badge gold' }, `撃破 ${r.wins}回`) : el('span', { class: 'badge off' }, '未撃破')),
     el('h3', { class: 'mt' }, `「${b.name}」`),
     b.kind === 'unit' ? el('p', { class: 'muted' }, b.unit.title) : null,
-    el('p', {}, `${n}問・${BOSS_PASS}点以上で撃破`),
+    el('p', {}, `${n}問${b.ura ? '（全部書く問題）' : ''}・${BOSS_PASS}点以上で撃破`),
     el('p', { class: 'reward' }, rewardLabel(b)),
     r.tries ? el('p', { class: 'muted' }, `最高 ${r.best}点・挑戦 ${r.tries}回`) : null,
     n === 0 ? el('p', { class: 'muted' }, '範囲に入っている試験がありません。「ステージ」で選んでください。') : null,
-    el('button', { class: b.kind === 'subject' ? 'boss' : 'small', disabled: n === 0, onclick: () => bossIntro(b, S) }, '挑戦する'));
+    el('button', { class: b.kind === 'subject' || b.ura ? 'boss' : 'small', disabled: n === 0, onclick: () => bossIntro(b, S) }, '挑戦する'));
 }
 
 function bossList(S) {
@@ -596,6 +604,9 @@ function bossList(S) {
     bossPanel(main, S),
     el('h2', { class: 'mt' }, '単元ボス'),
     units.map(b => bossPanel(b, S)),
+    el('h2', { class: 'mt' }, `裏ボス（撃破 ${bossWins(state, S, true)} / ${units.length + 1}）`),
+    el('p', { class: 'muted' }, '選択肢なし。答えを全部自分で書く上級戦。ひらがなで書いても正解。ふつうのボスを倒すと出てくる。'),
+    urasOf(S).map(b => bossPanel(b, S)),
     el('button', { onclick: () => subjectHome(S) }, `${S.name}の画面へ`),
   );
 }
@@ -604,11 +615,12 @@ function bossIntro(b, S) {
   const n = bossSize(b, S);
   if (!n) { bossList(S); return; }
   screen(
-    el('span', { class: 'badge' }, b.kind === 'subject' ? `${S.name}の教科ボス` : `${S.name} ${b.unit.stage}のボス`),
+    el('span', { class: 'badge' }, (b.ura ? '裏・' : '') + (b.kind === 'subject' ? `${S.name}の教科ボス` : `${S.name} ${b.unit.stage}のボス`)),
     el('h1', { class: 'mt bossname' }, `「${b.name}」があらわれた！`),
     el('div', { class: 'panel' },
       el('p', {}, `問題 ${n}問。${BOSS_PASS}点以上で撃破。`),
       el('p', {}, '答えても正解・不正解は出ない。最後にまとめて採点するよ。時間制限はなし。'),
+      b.ura ? el('p', {}, '裏ボスは選択肢なし。答えを全部自分で書こう。ひらがなでも正解になるよ。') : null,
       el('p', { class: 'reward' }, rewardLabel(b)),
       el('p', { class: 'muted' }, '途中で「やめる」と、この回は記録されない。')),
     el('button', { class: 'boss', onclick: () => {
@@ -662,7 +674,11 @@ function bossResult(b, S, s) {
       el('div', { class: 'big' }, j.passed ? '撃破！' : '不合格…'),
       el('p', {}, `正解 ${correct} / ${total}・かかった時間 ${mmss(spent)}`),
       el('p', { class: 'muted' }, `最高 ${j.best}点`)),
-    j.passed
+    j.passed && b.ura
+      ? el('div', { class: 'panel reward-panel pop' },
+        el('div', { class: 'big' }, '裏ボス撃破！'),
+        el('p', {}, `${j.first ? '初めての撃破' : `${j.nth}回目の撃破`}！ おうちの人にこの画面を見せてね。`))
+      : j.passed
       ? el('div', { class: 'panel reward-panel pop' },
         j.reward > 0
           ? [el('div', { class: 'big' }, `ごほうび ${yen(j.reward)}`),

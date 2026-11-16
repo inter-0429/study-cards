@@ -107,7 +107,7 @@ export function makeRecord(q, unit, ok, given, now, subjectName = '', extra = {}
 // ボス戦のまとめ1行。正誤＝撃破したか、問題＝「20問中17問正解」、正解の欄＝点数、答えの欄＝ごほうび
 // res は boss.js の judgeBoss の戻り値
 export function makeBossRecord(boss, res, correct, total, now, extra = {}) {
-  const label = boss.kind === 'subject' ? '教科ボス' : `${boss.unit.stage}のボス`;
+  const label = (boss.ura ? '裏・' : '') + (boss.kind === 'subject' ? '教科ボス' : `${boss.unit.stage}のボス`);
   return {
     at: stamp(now),
     id: boss.id,
@@ -123,6 +123,7 @@ export function makeBossRecord(boss, res, correct, total, now, extra = {}) {
 
 export function rewardText(res) {
   if (!res.passed) return 'ごほうびなし（不合格）';
+  if (res.ura) return `裏ボス撃破・ごほうびはおうちの人が決める（${res.first ? '初めての撃破' : `${res.nth}回目の撃破`}）`;
   if (res.reward > 0) return `${res.reward}円（${res.first ? '初めての撃破' : `${res.nth}回目の撃破`}）`;
   return `0円（${res.nth}回目の撃破・今日はもらい済み）`;
 }

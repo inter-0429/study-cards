@@ -1,12 +1,15 @@
 // ボス戦の出題・採点・ごほうび。画面（DOM）には触れない純粋な関数だけを置く。
 // お金はアプリでは扱わない。金額は「表示と記録」だけで、ごほうびはおうちの人が渡す。
-import { isEnabled, localDay, rankFor } from './engine.js';
+import { isEnabled, localDay, rankFor, normalizeAnswer } from './engine.js';
+import { URA } from '../data/ura.js';
 
 export const BOSS_PASS = 80; // この点数以上で撃破
 export const UNIT_BOSS_SIZE = 20;
 export const SUBJECT_BOSS_SIZE = 40;
 export const REWARD = { unit: { first: 100, again: 10 }, subject: { first: 1000, again: 100 } };
 export const BOSS_XP = { unit: 50, subject: 200 };
+// 裏ボス（全部記入の上級戦）。お金の額はアプリでは決めない（おうちの人が決める）
+export const URA_XP = { unit: 100, subject: 400 };
 
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 
@@ -27,11 +30,40 @@ export function subjectBoss(subject) {
   return { id: `boss-${subject.id}`, kind: 'subject', name: `${subject.name}の番人`, subject, unitIds: subject.units.map(u => u.id) };
 }
 
+// 裏ボス: ふつうのボスを1回でも倒すと出てくる。問題は全部「書く」形
+export function uraBoss(base) {
+  return { ...base, id: base.id.replace(/^boss-/, 'ura-'), ura: true, base: base.id, name: base.kind === 'subject' ? `${base.subject.name}の真の番人` : `${base.unit.title}の真の影` };
+}
+export const urasOf = S => bossesOf(S).map(uraBoss);
+export function uraOpen(state, boss) { return recOf(state, boss.base).wins > 0; }
+
+// 1字ずつの書き方の表（data/ura.js）から、全部漢字の形を作る
+const kanjiForm = spec => spec.split(' ').filter(Boolean).map(t => (t.includes('|') ? t.slice(0, t.indexOf('|')) : t)).join('');
+// 4択問題を「選択肢なしで書く問題」にする。表にない4択と、○×・並べ替えは使わない。入力問題はそのまま
+export function toWritten(q) {
+  if (q.type === 'input') return q;
+  if (q.type !== 'choice' || !URA[q.id]) return null;
+  const answers = [String(q.choices[q.answer]), ...URA[q.id].map(kanjiForm)];
+  return { ...q, type: 'input', answers: [...new Set(answers)], yomi: URA[q.id], choices: undefined, answer: undefined, why: undefined, written: true };
+}
+// 同じ単元に、答えが同じ入力問題があるときは、その4択は出さない（同じ問題が2回出ないように）
+export function writtenQuestions(qs) {
+  const ws = qs.map(toWritten).filter(Boolean);
+  const inputAns = new Map();
+  for (const q of ws.filter(q => !q.written)) {
+    const set = inputAns.get(q.unit) || new Set();
+    for (const a of q.answers) set.add(normalizeAnswer(a));
+    inputAns.set(q.unit, set);
+  }
+  return ws.filter(q => !q.written || !q.answers.some(a => (inputAns.get(q.unit) || new Set()).has(normalizeAnswer(a))));
+}
+
 // 教科ボスが先頭、そのあと単元ボスを単元の順に
 export const bossesOf = S => [subjectBoss(S), ...S.units.map(u => unitBoss(u, S))];
 
 // 単元ボス: その単元から（範囲の設定は見ない）。教科ボス: 範囲に入っている単元から、問題数の割合に合わせて。
 export function pickBossQuestions(boss, questions, state, rng = Math.random) {
+  if (boss.ura) questions = writtenQuestions(questions);
   if (boss.kind === 'unit') {
     return shuffle(questions.filter(q => q.unit === boss.unitIds[0]), rng).slice(0, UNIT_BOSS_SIZE);
   }
@@ -60,6 +92,7 @@ const recOf = (state, id) => ({ ...blank(), ...((state.bosses || {})[id] || {}) 
 // 次に倒したときのごほうび。today = 今日はもうもらった（2回目以降は1日1回まで）
 export function nextReward(state, boss, now = Date.now()) {
   const r = recOf(state, boss.id);
+  if (boss.ura) return { amount: 0, first: r.wins === 0, today: false, ura: true };
   const money = REWARD[boss.kind];
   if (r.wins === 0) return { amount: money.first, first: true, today: false };
   if (r.rewardDay === localDay(now)) return { amount: 0, first: false, today: true };
@@ -82,17 +115,17 @@ export function judgeBoss(state, boss, correct, total, now = Date.now()) {
     rec.wins++;
     nth = rec.wins;
     if (reward > 0) rec.rewardDay = localDay(now);
-    xp = BOSS_XP[boss.kind];
+    xp = (boss.ura ? URA_XP : BOSS_XP)[boss.kind];
     s.xp += xp;
   }
   rec.tries++;
   rec.best = Math.max(rec.best, score);
   s.bosses[boss.id] = rec;
   const rankAfter = rankFor(s.xp).name;
-  return { score, passed, reward, nth, first, xp, best: rec.best, rankUp: rankAfter !== rankBefore ? rankAfter : null, state: s };
+  return { score, passed, reward, nth, first, xp, ura: !!boss.ura, best: rec.best, rankUp: rankAfter !== rankBefore ? rankAfter : null, state: s };
 }
 
-// 教科の中で1回以上倒したボスの数
-export function bossWins(state, S) {
-  return bossesOf(S).filter(b => recOf(state, b.id).wins > 0).length;
+// 教科の中で1回以上倒したボスの数（ura=true なら裏ボス）
+export function bossWins(state, S, ura = false) {
+  return (ura ? urasOf(S) : bossesOf(S)).filter(b => recOf(state, b.id).wins > 0).length;
 }
