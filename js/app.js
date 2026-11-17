@@ -1,7 +1,7 @@
 // 画面。ロジックは engine.js、保存は store.js にある。
 import {
   createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickTimedIndex,
-  pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput,
+  pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput, underDailyMax, DAILY_MAX,
   unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits, whyWrong,
 } from './engine.js';
 import { load, save } from './store.js';
@@ -249,8 +249,24 @@ function help(back = home) {
 // ---- 問題 ----
 let session = null;
 
+// 同じ問題は1日 DAILY_MAX 回まで。出せる問題がなくなったときのお知らせ
+function dailyDone(S) {
+  const back = () => (S ? subjectHome(S) : home());
+  screen(
+    el('h1', { class: 'center' }, '今日はここまで！'),
+    el('div', { class: 'panel' },
+      el('p', {}, `この範囲の問題は、今日はもう1問${DAILY_MAX}回ずつ解いたよ。`),
+      el('p', {}, '同じ問題をくり返すより、ほかの試験に進むか、明日またやるほうが覚えられるよ。'),
+      el('p', { class: 'muted' }, 'ボス戦はいつでも挑戦できるよ。')),
+    el('button', { class: 'primary', onclick: back }, 'もどる'),
+  );
+}
+
 function startQuiz(mode, questions, opts = {}) {
-  if (!questions.length) { if (opts.subject) subjectHome(opts.subject); else home(); return; }
+  if (!questions.length) {
+    if (mode !== 'boss') { dailyDone(opts.subject || null); return; }
+    if (opts.subject) subjectHome(opts.subject); else home(); return;
+  }
   const subject = opts.subject || subjectOfUnit(questions[0].unit);
   session = {
     mode, questions, subject, idx: 0, timedIdx: mode === 'boss' ? -1 : pickTimedIndex(questions), retried: false,
@@ -443,7 +459,7 @@ function showQuestion() {
     if (s.idx >= s.questions.length && s.mode === 'training' && !s.retried) {
       // 特訓: 正解したけれどまだ倒せていないヴィランを、ラウンドの最後にもう一度出す
       s.retried = true;
-      s.questions = [...s.questions, ...villainRetries(state, s.questions)];
+      s.questions = [...s.questions, ...villainRetries(state, s.questions).filter(q => underDailyMax(state, q))];
     }
     if (s.idx < s.questions.length) showQuestion(); else s.onDone(s);
   }
@@ -525,7 +541,7 @@ function summary(u, back, nextLabel, onNext) {
 // ---- 特訓 ----
 function startTraining(S) {
   const rounds = pickTraining(state, S.questions, S.units);
-  if (!rounds.length) { subjectHome(S); return; }
+  if (!rounds.length) { dailyDone(S); return; }
   const villainsBefore = villainCount(S);
   let total = { xp: 0, defeated: 0, correct: 0, count: 0, newCards: [], rankUp: null };
   const runRound = (k) => {

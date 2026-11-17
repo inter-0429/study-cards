@@ -1,4 +1,5 @@
 // ゲームの中心ロジック。画面（DOM）には触れない純粋な関数だけを置く。
+import { URA } from '../data/ura.js';
 
 export const XP_CORRECT = 10;
 export const XP_TIMED_BONUS = 5;
@@ -7,6 +8,10 @@ export const VILLAIN_AFTER_WRONG = 2;
 export const VILLAIN_DEFEAT_STREAK = 2;
 export const CARD_AFTER_CORRECT = 2;
 export const SET_SIZE = 5;
+// 出す問題の形の割合（2026-11-17 オーナー）: 半分を記入（書く問題）、残りを 4択・○×・並べ替え で同じ数ずつ
+export const WRITTEN_SHARE = 0.5;
+// 同じ問題は1日にこの回数まで（答えだけ覚えるのを防ぐ。2026-11-17 オーナー）
+export const DAILY_MAX = 3;
 
 export const RANKS = [
   { name: '候補生', min: 0 },
@@ -41,6 +46,9 @@ export function recordAnswer(state, q, ok, { timed = false, now = Date.now() } =
   const rec = s.qs[q.id] || { seen: 0, correct: 0, wrong: 0, streak: 0, lastAt: null, villain: false };
   rec.seen++;
   rec.lastAt = now;
+  const day = localDay(now);
+  rec.dayCount = rec.day === day ? (rec.dayCount || 0) + 1 : 1;
+  rec.day = day;
   const rankBefore = rankFor(s.xp).name;
   if (ok) {
     rec.correct++;
@@ -103,21 +111,111 @@ function shuffle(arr, rng) {
   return a;
 }
 
-export function pickMission(state, questions, rng = Math.random) {
-  const pool = questions.filter(q => isEnabled(state, q.unit));
-  const rec = q => state.qs[q.id];
+// ---- 書く問題への変換（裏ボスと同じ表 data/ura.js を使う） ----
+
+// 1字ずつの書き方の表（data/ura.js）から、全部漢字の形を作る
+const kanjiForm = spec => spec.split(' ').filter(Boolean).map(t => (t.includes('|') ? t.slice(0, t.indexOf('|')) : t)).join('');
+// 4択問題を「選択肢なしで書く問題」にする。表にない4択と、○×・並べ替えは使わない。入力問題はそのまま
+export function toWritten(q) {
+  if (q.type === 'input') return q;
+  if (q.type !== 'choice' || !URA[q.id]) return null;
+  const answers = [String(q.choices[q.answer]), ...URA[q.id].map(kanjiForm)];
+  return { ...q, type: 'input', answers: [...new Set(answers)], yomi: URA[q.id], choices: undefined, answer: undefined, why: undefined, written: true };
+}
+// 同じ単元に、答えが同じ入力問題があるときは、その4択は出さない（同じ問題が2回出ないように）
+export function writtenQuestions(qs) {
+  const ws = qs.map(toWritten).filter(Boolean);
+  const inputAns = new Map();
+  for (const q of ws.filter(q => !q.written)) {
+    const set = inputAns.get(q.unit) || new Set();
+    for (const a of q.answers) set.add(normalizeAnswer(a));
+    inputAns.set(q.unit, set);
+  }
+  return ws.filter(q => !q.written || !q.answers.some(a => (inputAns.get(q.unit) || new Set()).has(normalizeAnswer(a))));
+}
+
+// ---- 形の割合をそろえる・1日の回数 ----
+
+// 今日この問題を解いた回数
+export function todayCount(state, q, now = Date.now()) {
+  const r = state.qs[q.id];
+  return r && r.day === localDay(now) ? (r.dayCount || 0) : 0;
+}
+export function underDailyMax(state, q, now = Date.now()) {
+  return todayCount(state, q, now) < DAILY_MAX;
+}
+
+// size 問のうち、各形を何問にするか。記入は半分（端数は rng で切り上げか切り捨て）、残りを3つの形に同じ数ずつ
+export function formatTargets(size, rng = Math.random) {
+  const exact = size * WRITTEN_SHARE;
+  const frac = exact - Math.floor(exact);
+  const written = Math.floor(exact) + (frac > 0 && rng() < frac ? 1 : 0);
+  const rest = size - written;
+  const kinds = shuffle(['choice', 'tf', 'order'], rng);
+  const t = { written, choice: 0, tf: 0, order: 0 };
+  kinds.forEach((k, i) => { t[k] = Math.floor(rest / 3) + (i < rest % 3 ? 1 : 0); });
+  return t;
+}
+
+// 優先順のリストから size 問を選び、形の割合に近づける。
+// lists: [{ qs, max, must }]。must のリストは形に関係なく max 問まで先に入れる（ヴィランなど）。
+// 書く形にできる4択は、記入が足りないとき選択肢なしで出す。足りない形があれば、ほかの形で埋める。
+// 1つの組の中で、記入の答えが同じ問題は2つ入れない（同じ問題が2回出ないように）。
+export function mixSet(lists, size, { rng = Math.random } = {}) {
+  const target = formatTargets(size, rng);
+  const count = { written: 0, choice: 0, tf: 0, order: 0, other: 0 };
   const picked = [];
-  const take = (list, n) => {
-    for (const q of list) {
-      if (picked.length >= SET_SIZE || n <= 0) break;
-      if (!picked.includes(q)) { picked.push(q); n--; }
+  const ids = new Set();
+  const answerKeys = new Set();
+  const keyOf = w => normalizeAnswer(String(w.answers[0]).replace(/（.*）$/, ''));
+  const dupAnswer = q => { const w = toWritten(q); return !!w && answerKeys.has(keyOf(w)); };
+  const formOf = (q, strict) => {
+    if (q.type === 'input') return !dupAnswer(q) && (!strict || count.written < target.written) ? 'written' : null;
+    if (q.type === 'choice' && toWritten(q) && !dupAnswer(q) && count.written < target.written) return 'written';
+    if (q.type === 'choice' && strict && dupAnswer(q)) return null;
+    // 記入の分の席は残しておく（先に入れたヴィランなどで、ほかの形が多くなっても記入が減らないように）
+    const others = picked.length - count.written;
+    if (q.type === 'choice' || q.type === 'tf' || q.type === 'order') return !strict || (count[q.type] < target[q.type] && others < size - target.written) ? q.type : null;
+    return strict ? null : 'other';
+  };
+  const add = (q, form) => {
+    ids.add(q.id);
+    count[form]++;
+    const shown = form === 'written' && q.type === 'choice' ? toWritten(q) : q;
+    const w = toWritten(q);
+    if (w) answerKeys.add(keyOf(w)); // 4択で出しても、同じ答えの記入とは同じ組に入れない
+    picked.push(shown);
+  };
+  const run = (mode) => {
+    for (const l of lists) {
+      if (mode === 'must' && !l.must) continue;
+      if (mode !== 'must' && l.must) continue; // 先に入れるリストは max 問までで終わり
+      let n = mode === 'must' ? (l.max ?? size) : size;
+      for (const q of l.qs) {
+        if (picked.length >= size || n <= 0) break;
+        if (ids.has(q.id)) continue;
+        const form = formOf(q, mode === 'strict');
+        if (!form) continue;
+        add(q, form); n--;
+      }
     }
   };
-  take(shuffle(pool.filter(q => rec(q)?.villain), rng), 2);
-  take(shuffle(pool.filter(q => !rec(q)), rng), 2);
+  run('must');   // 先に入れるもの（形は気にしない）
+  run('strict'); // 形の割合どおりに
+  run('fill');   // 足りない分をほかの形で
+  return picked;
+}
+
+export function pickMission(state, questions, rng = Math.random, now = Date.now()) {
+  const pool = questions.filter(q => isEnabled(state, q.unit) && underDailyMax(state, q, now));
+  const rec = q => state.qs[q.id];
   const seenOldest = pool.filter(q => rec(q) && !rec(q).villain).sort((a, b) => (rec(a).lastAt ?? 0) - (rec(b).lastAt ?? 0));
-  take(seenOldest, SET_SIZE);
-  take(shuffle(pool, rng), SET_SIZE);
+  const picked = mixSet([
+    { qs: shuffle(pool.filter(q => rec(q)?.villain), rng), max: 2, must: true },
+    { qs: shuffle(pool.filter(q => !rec(q)), rng), max: 2, must: true },
+    { qs: seenOldest },
+    { qs: shuffle(pool, rng) },
+  ], SET_SIZE, { rng });
   return shuffle(picked, rng);
 }
 
@@ -231,7 +329,7 @@ export function subjectSummary(state, subject) {
   return { attempts, accuracy: attempts ? correct / attempts : 0, villains, weakest: weak ? { unit: weak.unit, accuracy: weak.accuracy } : null };
 }
 
-export function pickTraining(state, questions, units, rng = Math.random) {
+export function pickTraining(state, questions, units, rng = Math.random, now = Date.now()) {
   const ranked = units
     .filter(u => isEnabled(state, u.id))
     .map(u => ({ u, p: unitProgress(state, questions, u.id) }))
@@ -239,14 +337,19 @@ export function pickTraining(state, questions, units, rng = Math.random) {
     .sort((a, b) => (b.p.villains - a.p.villains) || (a.p.accuracy - b.p.accuracy))
     .slice(0, 3);
   return ranked.map(({ u }) => {
-    const qs = questions.filter(q => q.unit === u.id);
+    const qs = questions.filter(q => q.unit === u.id && underDailyMax(state, q, now));
     const r = q => state.qs[q.id];
     const villains = shuffle(qs.filter(q => r(q)?.villain), rng);
     const missed = shuffle(qs.filter(q => !r(q)?.villain && r(q)?.wrong > 0), rng)
       .sort((a, b) => r(b).wrong - r(a).wrong);
     const rest = shuffle(qs.filter(q => !villains.includes(q) && !missed.includes(q)), rng);
-    return { unit: u, questions: [...villains, ...missed, ...rest].slice(0, SET_SIZE) };
-  });
+    const picked = mixSet([
+      { qs: villains, max: SET_SIZE, must: true },
+      { qs: missed, max: SET_SIZE, must: true },
+      { qs: rest },
+    ], SET_SIZE, { rng });
+    return { unit: u, questions: picked };
+  }).filter(x => x.questions.length > 0);
 }
 
 export function fieldStats(state, questions) {

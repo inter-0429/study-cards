@@ -1,7 +1,6 @@
 // ボス戦の出題・採点・ごほうび。画面（DOM）には触れない純粋な関数だけを置く。
 // お金はアプリでは扱わない。金額は「表示と記録」だけで、ごほうびはおうちの人が渡す。
-import { isEnabled, localDay, rankFor, normalizeAnswer } from './engine.js';
-import { URA } from '../data/ura.js';
+import { isEnabled, localDay, rankFor, toWritten, writtenQuestions, mixSet } from './engine.js';
 
 export const BOSS_PASS = 80; // この点数以上で撃破
 export const UNIT_BOSS_SIZE = 20;
@@ -37,26 +36,8 @@ export function uraBoss(base) {
 export const urasOf = S => bossesOf(S).map(uraBoss);
 export function uraOpen(state, boss) { return recOf(state, boss.base).wins > 0; }
 
-// 1字ずつの書き方の表（data/ura.js）から、全部漢字の形を作る
-const kanjiForm = spec => spec.split(' ').filter(Boolean).map(t => (t.includes('|') ? t.slice(0, t.indexOf('|')) : t)).join('');
-// 4択問題を「選択肢なしで書く問題」にする。表にない4択と、○×・並べ替えは使わない。入力問題はそのまま
-export function toWritten(q) {
-  if (q.type === 'input') return q;
-  if (q.type !== 'choice' || !URA[q.id]) return null;
-  const answers = [String(q.choices[q.answer]), ...URA[q.id].map(kanjiForm)];
-  return { ...q, type: 'input', answers: [...new Set(answers)], yomi: URA[q.id], choices: undefined, answer: undefined, why: undefined, written: true };
-}
-// 同じ単元に、答えが同じ入力問題があるときは、その4択は出さない（同じ問題が2回出ないように）
-export function writtenQuestions(qs) {
-  const ws = qs.map(toWritten).filter(Boolean);
-  const inputAns = new Map();
-  for (const q of ws.filter(q => !q.written)) {
-    const set = inputAns.get(q.unit) || new Set();
-    for (const a of q.answers) set.add(normalizeAnswer(a));
-    inputAns.set(q.unit, set);
-  }
-  return ws.filter(q => !q.written || !q.answers.some(a => (inputAns.get(q.unit) || new Set()).has(normalizeAnswer(a))));
-}
+// 書く問題への変換は engine.js に移した（ミッション・特訓でも使うため）
+export { toWritten, writtenQuestions };
 
 // 教科ボスが先頭、そのあと単元ボスを単元の順に
 export const bossesOf = S => [subjectBoss(S), ...S.units.map(u => unitBoss(u, S))];
@@ -64,22 +45,24 @@ export const bossesOf = S => [subjectBoss(S), ...S.units.map(u => unitBoss(u, S)
 // 単元ボス: その単元から（範囲の設定は見ない）。教科ボス: 範囲に入っている単元から、問題数の割合に合わせて。
 export function pickBossQuestions(boss, questions, state, rng = Math.random) {
   if (boss.ura) questions = writtenQuestions(questions);
+  // ふつうのボスも、記入が半分になるように選ぶ（書く形にできる4択は選択肢なしで出す）。裏ボスはもともと全部記入
+  const mix = (qs, n) => (boss.ura ? qs.slice(0, n) : mixSet([{ qs }], Math.min(n, qs.length), { rng }));
   if (boss.kind === 'unit') {
-    return shuffle(questions.filter(q => q.unit === boss.unitIds[0]), rng).slice(0, UNIT_BOSS_SIZE);
+    return shuffle(mix(shuffle(questions.filter(q => q.unit === boss.unitIds[0]), rng), UNIT_BOSS_SIZE), rng);
   }
   const groups = boss.unitIds
     .filter(id => isEnabled(state, id))
     .map(id => ({ id, qs: shuffle(questions.filter(q => q.unit === id), rng) }))
     .filter(g => g.qs.length > 0);
   const total = groups.reduce((n, g) => n + g.qs.length, 0);
-  if (total <= SUBJECT_BOSS_SIZE) return shuffle(groups.flatMap(g => g.qs), rng);
+  if (total <= SUBJECT_BOSS_SIZE) return shuffle(groups.flatMap(g => mix(g.qs, g.qs.length)), rng);
   // 割合で配り、端数は大きい順に1問ずつ足す（最大剰余法）
   const exact = groups.map(g => (g.qs.length * SUBJECT_BOSS_SIZE) / total);
   const take = exact.map(Math.floor);
   let left = SUBJECT_BOSS_SIZE - take.reduce((a, b) => a + b, 0);
   const order = exact.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
   for (const [, i] of order) { if (left <= 0) break; take[i]++; left--; }
-  return shuffle(groups.flatMap((g, i) => g.qs.slice(0, take[i])), rng);
+  return shuffle(groups.flatMap((g, i) => mix(g.qs, take[i])), rng);
 }
 
 export function scoreOf(correct, total) {
