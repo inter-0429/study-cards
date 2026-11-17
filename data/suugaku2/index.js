@@ -5,5 +5,7 @@ import { QUESTIONS as t4 } from './t04.js';
 import { QUESTIONS as t5 } from './t05.js';
 import { QUESTIONS as t6 } from './t06.js';
 import { QUESTIONS as t7 } from './t07.js';
+import { QUESTIONS as iikae } from './iikae.js';
 
-export const QUESTIONS = [...t1, ...t2, ...t3, ...t4, ...t5, ...t6, ...t7];
+// iikae.js: 言いかえの記入問題（2026-11-17 追加）
+export const QUESTIONS = [...t1, ...t2, ...t3, ...t4, ...t5, ...t6, ...t7, ...iikae];
