@@ -3,5 +3,7 @@ import { QUESTIONS as b2 } from './b02.js';
 import { QUESTIONS as b3 } from './b03.js';
 import { QUESTIONS as b4 } from './b04.js';
 import { QUESTIONS as b5 } from './b05.js';
+import { QUESTIONS as iikae } from './iikae.js';
 
-export const QUESTIONS = [...b1, ...b2, ...b3, ...b4, ...b5];
+// iikae.js: 言いかえの記入問題（2026-11-17 追加）
+export const QUESTIONS = [...b1, ...b2, ...b3, ...b4, ...b5, ...iikae];
