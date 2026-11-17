@@ -1,6 +1,6 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
 // v15: 地理総合を足した（data/chiri/）
-const CACHE = 'hero-study-v15';
+const CACHE = 'hero-study-v16';
 const ASSETS = [
   './',
   './index.html',
@@ -45,12 +45,14 @@ const ASSETS = [
   './data/kagaku/k03.js',
   './data/kagaku/k04.js',
   './data/kagaku/k05.js',
+  './data/kagaku/iikae.js',
   './data/seibutsu/units.js',
   './data/seibutsu/index.js',
   './data/seibutsu/s01.js',
   './data/seibutsu/s02.js',
   './data/seibutsu/s03.js',
   './data/seibutsu/s04.js',
+  './data/seibutsu/iikae.js',
   './data/butsuri/units.js',
   './data/butsuri/index.js',
   './data/butsuri/b01.js',
@@ -58,6 +60,7 @@ const ASSETS = [
   './data/butsuri/b03.js',
   './data/butsuri/b04.js',
   './data/butsuri/b05.js',
+  './data/butsuri/iikae.js',
   './data/suugaku/units.js',
   './data/suugaku/index.js',
   './data/suugaku/m01.js',
@@ -89,6 +92,7 @@ const ASSETS = [
   './data/suugaku2/t05.js',
   './data/suugaku2/t06.js',
   './data/suugaku2/t07.js',
+  './data/suugaku2/iikae.js',
   './data/chiri/units.js',
   './data/chiri/index.js',
   './data/chiri/c01.js',
