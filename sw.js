@@ -1,7 +1,8 @@
 // 電波がなくても動くように、アプリのファイルをすべて iPhone の中に保存する。
 // v15: 地理総合を足した（data/chiri/）
 // v17: プレイヤーのレベルを Lv 1〜100 にした
-const CACHE = 'hero-study-v17';
+// v18: レベルの上限を Lv 1000 にした
+const CACHE = 'hero-study-v18';
 const ASSETS = [
   './',
   './index.html',
