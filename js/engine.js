@@ -13,25 +13,28 @@ export const WRITTEN_SHARE = 0.5;
 // 同じ問題は1日にこの回数まで（答えだけ覚えるのを防ぐ。2026-11-17 オーナー）
 export const DAILY_MAX = 3;
 
-// プレイヤーのレベル（2026-11-22 オーナー: 100 くらいまで）。
-// レベル L になるのに必要な経験値の合計 = LEVEL_XP ×（L−1）²。レベル100 は 49,005。
-export const MAX_LEVEL = 100;
-export const LEVEL_XP = 5;
+// プレイヤーのレベル（2026-11-22 オーナー: 1000 まで）。
+// レベル L になるのに必要な経験値の合計 = LEVEL_XP ×（L−1）^1.5（小数は切り捨て）。Lv 1000 は 315,753。
+// 次のレベルまでは、はじめは正解1問分、Lv 1000 の手前でも正解50問分ほど。
+export const MAX_LEVEL = 1000;
+export const LEVEL_XP = 10;
 // 称号は、そのレベルになったら付く
 export const RANKS = [
   { name: '候補生', level: 1 },
-  { name: '見習い', level: 10 },
-  { name: '一次合格', level: 20 },
-  { name: '二次合格', level: 30 },
-  { name: '最終試験挑戦者', level: 40 },
-  { name: '合格者', level: 50 },
-  { name: '一人前のヒーロー', level: 70 },
-  { name: 'トップヒーロー', level: 90 },
-  { name: '伝説のヒーロー', level: 100 },
+  { name: '見習い', level: 15 },
+  { name: '一次合格', level: 30 },
+  { name: '二次合格', level: 60 },
+  { name: '最終試験挑戦者', level: 90 },
+  { name: '合格者', level: 120 },
+  { name: '一人前のヒーロー', level: 200 },
+  { name: 'トップヒーロー', level: 350 },
+  { name: '歴戦のヒーロー', level: 500 },
+  { name: '英雄', level: 700 },
+  { name: '伝説のヒーロー', level: 1000 },
 ];
 
 export function xpForLevel(level) {
-  return LEVEL_XP * (level - 1) * (level - 1);
+  return Math.floor(LEVEL_XP * Math.pow(level - 1, 1.5));
 }
 
 // 記録は JSON にできる値だけなので、古い iPhone でも動くこの方法で複製する
