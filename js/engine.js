@@ -13,14 +13,26 @@ export const WRITTEN_SHARE = 0.5;
 // 同じ問題は1日にこの回数まで（答えだけ覚えるのを防ぐ。2026-11-17 オーナー）
 export const DAILY_MAX = 3;
 
+// プレイヤーのレベル（2026-11-22 オーナー: 100 くらいまで）。
+// レベル L になるのに必要な経験値の合計 = LEVEL_XP ×（L−1）²。レベル100 は 49,005。
+export const MAX_LEVEL = 100;
+export const LEVEL_XP = 5;
+// 称号は、そのレベルになったら付く
 export const RANKS = [
-  { name: '候補生', min: 0 },
-  { name: '見習い', min: 100 },
-  { name: '一次合格', min: 300 },
-  { name: '二次合格', min: 600 },
-  { name: '最終試験挑戦者', min: 1000 },
-  { name: '合格者', min: 1500 },
+  { name: '候補生', level: 1 },
+  { name: '見習い', level: 10 },
+  { name: '一次合格', level: 20 },
+  { name: '二次合格', level: 30 },
+  { name: '最終試験挑戦者', level: 40 },
+  { name: '合格者', level: 50 },
+  { name: '一人前のヒーロー', level: 70 },
+  { name: 'トップヒーロー', level: 90 },
+  { name: '伝説のヒーロー', level: 100 },
 ];
+
+export function xpForLevel(level) {
+  return LEVEL_XP * (level - 1) * (level - 1);
+}
 
 // 記録は JSON にできる値だけなので、古い iPhone でも動くこの方法で複製する
 function clone(v) {
@@ -32,12 +44,18 @@ export function createState() {
 }
 
 export function rankFor(xp) {
-  let i = 0;
-  while (i + 1 < RANKS.length && xp >= RANKS[i + 1].min) i++;
-  const cur = RANKS[i];
-  const nxt = RANKS[i + 1];
-  if (!nxt) return { name: cur.name, min: cur.min, next: null, progress: 1 };
-  return { name: cur.name, min: cur.min, next: nxt.min, progress: (xp - cur.min) / (nxt.min - cur.min) };
+  const v = Number.isFinite(xp) && xp > 0 ? xp : 0;
+  let level = 1;
+  while (level < MAX_LEVEL && v >= xpForLevel(level + 1)) level++;
+  let t = 0;
+  while (t + 1 < RANKS.length && level >= RANKS[t + 1].level) t++;
+  const title = RANKS[t].name;
+  // name はレベルが上がるたびに変わる（ランクアップの判定と表示に使う）
+  const name = `Lv ${level} ${title}`;
+  const min = xpForLevel(level);
+  if (level >= MAX_LEVEL) return { name, level, title, min, next: null, progress: 1 };
+  const next = xpForLevel(level + 1);
+  return { name, level, title, min, next, progress: (v - min) / (next - min) };
 }
 
 export function recordAnswer(state, q, ok, { timed = false, now = Date.now() } = {}) {

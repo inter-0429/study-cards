@@ -102,11 +102,11 @@ function beep(kind) {
 function rankPanel() {
   const r = rankFor(state.xp);
   return el('div', { class: 'panel' },
-    el('div', { class: 'muted' }, 'ヒーロー候補生のランク（全教科の正解で経験値がたまって上がる）'),
+    el('div', { class: 'muted' }, 'ヒーロー候補生のレベル（全教科の正解で経験値がたまって上がる・最高 Lv 100）'),
     el('div', { class: 'rank' }, r.name),
     el('div', { class: 'bar' }, el('span', { style: `width:${pct(r.progress)}%` })),
     el('div', { class: 'row mt' },
-      el('span', { class: 'muted' }, r.next === null ? `経験値 ${state.xp}・最高ランク！` : `経験値 ${state.xp}・次のランクまで ${r.next - state.xp}`),
+      el('span', { class: 'muted' }, r.next === null ? `経験値 ${state.xp}・最高レベル！` : `経験値 ${state.xp}・次のレベルまで ${r.next - state.xp}`),
       el('span', { class: 'spacer' }),
       el('span', { class: 'badge gold' }, `連続 ${state.days.count} 日`)));
 }
@@ -194,7 +194,7 @@ function subjectHome(S) {
 const HELP = [
   ['このアプリでやること', [
     '歴史総合・化学などの問題を解いて、テストに出る語句を覚えるアプリです。',
-    '最初の画面で教科を選びます。正解すると経験値がたまり、ヒーロー候補生のランクが上がります（ランクは全教科で1つ）。',
+    '最初の画面で教科を選びます。正解すると経験値がたまり、ヒーロー候補生のレベルが上がります（レベルは全教科で1つ・最高 Lv 100）。',
   ]],
   ['毎日の使い方', [
     '① 移動中など毎日1回：教科の「今日のミッション（5問）」を押して答える。',
@@ -232,7 +232,7 @@ const HELP = [
   ]],
   ['経験値の増え方', [
     '正解 +10、時間制限の問題に正解 +5、ヴィラン撃破 +30。',
-    'ランク：候補生 → 見習い（100）→ 一次合格（300）→ 二次合格（600）→ 最終試験挑戦者（1000）→ 合格者（1500）',
+    'レベルと称号：Lv 1 候補生 → Lv 10 見習い → Lv 20 一次合格 → Lv 30 二次合格 → Lv 40 最終試験挑戦者 → Lv 50 合格者 → Lv 70 一人前のヒーロー → Lv 90 トップヒーロー → Lv 100 伝説のヒーロー。上のレベルほど、次に上がるまでの経験値が多くなる',
   ]],
 ];
 
@@ -469,7 +469,7 @@ function result(s) {
   if (s.rankUp) fanfare('rankUp'); else if (s.newCards.length) beep('card');
   screen(
     el('h1', { class: 'center' }, s.correct === s.questions.length ? '全問正解！' : 'ミッション完了'),
-    s.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, s.rankUp)) : null,
+    s.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'レベルアップ！'), el('div', { class: 'rank' }, s.rankUp)) : null,
     el('div', { class: 'panel' },
       el('p', {}, `正解 ${s.correct} / ${s.questions.length}`),
       el('p', {}, `獲得経験値 +${s.xp}`),
@@ -563,7 +563,7 @@ function trainingResult(t, before, S) {
   const left = villainCount(S);
   screen(
     el('h1', { class: 'center' }, '特訓おつかれさま！'),
-    t.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, t.rankUp)) : null,
+    t.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'レベルアップ！'), el('div', { class: 'rank' }, t.rankUp)) : null,
     el('div', { class: 'panel' },
       el('p', {}, `正解 ${t.correct} / ${t.count}`),
       el('p', {}, `獲得経験値 +${t.xp}`),
@@ -702,7 +702,7 @@ function bossResult(b, S, s) {
           : [el('p', {}, `${j.nth}回目の撃破！ でも今日のごほうびはもうもらっているよ。`),
             el('p', { class: 'muted' }, `明日また倒すと ${yen(REWARD[b.kind].again)}。`)])
       : el('div', { class: 'panel' }, el('p', {}, need > 0 ? `あと ${need}問 正解で撃破（${BOSS_PASS}点）だった！` : 'おしい！'), el('p', { class: 'muted' }, 'まちがえた問題を見直して、もう一度挑戦しよう。')),
-    rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'ランクアップ！'), el('div', { class: 'rank' }, rankUp)) : null,
+    rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'レベルアップ！'), el('div', { class: 'rank' }, rankUp)) : null,
     el('div', { class: 'panel' },
       el('p', {}, `獲得経験値 +${xp}${j.xp ? `（撃破ボーナス +${j.xp} を含む）` : ''}`),
       defeated ? el('p', {}, el('span', { class: 'badge villain' }, `ヴィラン撃破 ${defeated} 体`)) : null,
@@ -821,14 +821,14 @@ function settings(confirming = false, syncMsg = null) {
     el('div', { class: 'panel' },
       el('h3', {}, '記録について'),
       on
-        ? el('p', { class: 'muted' }, 'ランク・カードなどの記録はこの iPhone の中に保存されています。解いた結果（日時・問題・答え・正誤）は、おうちの人の Google スプレッドシートにも送られて、苦手なところの勉強に使います。')
+        ? el('p', { class: 'muted' }, 'レベル・カードなどの記録はこの iPhone の中に保存されています。解いた結果（日時・問題・答え・正誤）は、おうちの人の Google スプレッドシートにも送られて、苦手なところの勉強に使います。')
         : el('p', { class: 'muted' }, '記録はこの iPhone の中だけに保存されていて、インターネットには送られません。'),
       el('p', { class: 'muted' }, 'Safari の「履歴とWebサイトデータを消去」をすると、記録も消えます。')),
     syncPanel(syncMsg),
     el('div', { class: 'panel' },
       el('h3', {}, '記録を消す'),
       confirming
-        ? [el('p', {}, '本当に消す？ ランク・カード・ヴィランが全部はじめからになります。'),
+        ? [el('p', {}, '本当に消す？ レベル・カード・ヴィランが全部はじめからになります。'),
           el('p', { class: 'muted' }, 'ボス戦の撃破とごほうびの記録は消えずに残ります。'),
           el('div', { class: 'grid2' },
             // ボスの記録は残す（消して倒し直すと「初めての撃破」のごほうびがまた出てしまうため）
