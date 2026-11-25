@@ -202,3 +202,12 @@ button.game { background: linear-gradient(135deg, #0f8a4a, #2fd27a); border-colo
   100% { transform: rotate(720deg) scale(1.15); box-shadow: 0 0 48px 12px var(--glow, #ffffff); }
 }
 @media (prefers-reduced-motion: reduce) { .ball { animation: none; } }
+
+/* ---- オーダー（2026-11-25） ---- */
+.batter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 8px 12px; margin: 0 0 10px; }
+.batter.r-L { box-shadow: 0 0 10px rgba(255, 79, 216, 0.6); }
+.bname { font-weight: 800; font-size: 17px; }
+.pbname { font-size: 14px; color: var(--muted); }
+button.slot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; text-align: left; margin-bottom: 6px; min-height: 52px; }
+.pcard.pick { cursor: pointer; }
+.pcard .pstat { font-size: 11px; font-weight: 700; margin-top: 2px; }
