@@ -17,6 +17,7 @@ import { SCORES, playScore } from './sound.js';
 import {
   RARITIES, RARITY_LABEL, ODDS, LEAGUES, INNINGS, WIN_TO_PROMOTE, POINTS_PER_TICKET,
   newGame, atBat, isOver, finishGame, oppRunsShown, earnPoints, applyResult, scout, playerById, teamPower, canPinchHit,
+  lineupOf, autoLineup, setSlot, recordStat, starOf,
 } from './baseball.js';
 import { PLAYERS } from '../data/players.js';
 import { playSfx } from './bbsound.js';
@@ -291,6 +292,7 @@ function startQuiz(mode, questions, opts = {}) {
   session = {
     mode, questions, subject, idx: 0, timedIdx: mode === 'boss' || mode === 'game' ? -1 : pickTimedIndex(questions), retried: false,
     game: mode === 'game' ? newGame(state.baseball.league) : null, pendingOut: false, pts: 0, tickets0: state.baseball.tickets,
+    lineup: mode === 'game' ? lineupOf(state.baseball) : null, tally: {},
     xp: 0, combo: 0, maxCombo: 0, newCards: [], defeated: 0, born: 0, rankUp: null, correct: 0,
     answers: [], startedAt: Date.now(), // ボス戦: 答えをためておき、最後にまとめて採点する
     label: opts.label || (mode === 'mission' ? `${subject.name} 今日のミッション` : ''), onDone: opts.onDone || result,
@@ -462,6 +464,7 @@ function showQuestion() {
         stopTimer(); subjectHome(s.subject);
       } }, 'やめる')),
     s.mode === 'game' ? sbWrap : null,
+    s.mode === 'game' ? batterBox(s) : null,
     el('p', { class: 'muted' }, `${s.subject.name} ${unit.stage}「${unit.title}」`,
       rec?.villain ? ' ' : null, rec?.villain ? el('span', { class: 'badge villain' }, 'ヴィラン') : null),
     s.mode === 'boss' ? el('div', { class: 'bar boss' }, el('span', { style: `width:${pct(s.idx / s.questions.length)}%` })) : null,
@@ -539,16 +542,40 @@ function result(s) {
 // ---- 野球モード（試合とスカウト） ----
 const PLAY_LABEL = { single: 'ヒット！', double: '二塁打！', hr: 'ホームラン！！', out: 'アウト' };
 
+// 今のバッター（オーダーの選手。null は助っ人）
+function currentBatter(s) {
+  const id = s.lineup[s.game.batter % 9] || null;
+  return { id, p: id ? playerById(id) : null, star: id ? starOf(state.baseball, id) : 1, order: (s.game.batter % 9) + 1 };
+}
+
 function playBall(s, ok, written) {
   const before = s.game.inning;
-  const r = atBat(s.game, { ok, written });
+  const b = currentBatter(s);
+  const r = atBat(s.game, { ok, written, batter: b.p, star: b.star });
   s.game = r.game;
-  return { ...r, change: r.game.inning !== before && !isOver(r.game), oppInning: s.game.opp[before - 1] };
+  if (b.id) {
+    state = { ...state, baseball: recordStat(state.baseball, b.id, r.result) };
+    persist();
+    const t = s.tally[b.id] || { h: 0, hr: 0 };
+    s.tally[b.id] = { h: t.h + (r.result === 'out' ? 0 : 1), hr: t.hr + (r.result === 'hr' ? 1 : 0) };
+  }
+  return { ...r, name: b.p ? b.p.name : '助っ人', change: r.game.inning !== before && !isOver(r.game), oppInning: s.game.opp[before - 1] };
+}
+
+function batterBox(s) {
+  const b = currentBatter(s);
+  return el('div', { class: `batter ${b.p ? `r-${b.p.rarity}` : ''}` },
+    el('b', {}, `${b.order}番`),
+    b.p ? [el('span', { class: `rtag r-${b.p.rarity}` }, RARITY_LABEL[b.p.rarity]), el('span', { class: 'bname' }, b.p.name),
+      el('span', { class: 'muted' }, `${b.p.pos} ${'★'.repeat(b.star)}`)]
+      : el('span', { class: 'muted' }, '助っ人（スカウトで選手を集めよう）'));
 }
 
 function playLine(p) {
   return el('div', { class: `play ${p.result} pop` },
+    el('div', { class: 'pbname' }, p.name),
     el('div', { class: 'big' }, PLAY_LABEL[p.result], p.scored ? ` ${p.scored}点！` : ''),
+    p.boosted ? el('p', { class: 'gold' }, 'パワーで長打に！') : null,
     p.change ? el('p', {}, `スリーアウト チェンジ！ 相手の攻撃は ${p.oppInning}点`) : null);
 }
 
@@ -585,9 +612,13 @@ function gameResult(s) {
   const got = state.baseball.tickets - s.tickets0;
   const title = { win: '勝利！', lose: '負け…', draw: '引き分け' }[outcome];
   const oppTotal = s.game.opp.reduce((x, y) => x + y, 0);
+  const heroId = Object.keys(s.tally).sort((x, y) => (s.tally[y].hr * 4 + s.tally[y].h) - (s.tally[x].hr * 4 + s.tally[x].h))[0];
+  const hero = heroId && s.tally[heroId].h > 0 ? playerById(heroId) : null;
   screen(
     el('h1', { class: `center ${outcome === 'win' ? 'pop' : ''}` }, `⚾ ${title}`),
     scoreboard({ ...s.game, inning: INNINGS + 1, outs: 0, bases: [false, false, false] }),
+    hero ? el('div', { class: 'panel center' }, el('div', { class: 'muted' }, '今日のヒーロー'), el('div', { class: 'rank' }, hero.name),
+      el('p', {}, `ヒット ${s.tally[heroId].h}本${s.tally[heroId].hr ? `（ホームラン ${s.tally[heroId].hr}本）` : ''}`)) : null,
     r.promoted ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'リーグ昇格！'), el('div', { class: 'rank' }, LEAGUES[state.baseball.league].name)) : null,
     s.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'レベルアップ！'), el('div', { class: 'rank' }, s.rankUp)) : null,
     el('div', { class: 'panel' },
@@ -616,7 +647,13 @@ function baseballPanel() {
     el('p', { class: 'muted note' }, '教科を開いて「⚾ 試合」。正解でスカウトポイント（記入問題の正解は3ポイント）'),
     el('div', { class: 'grid2' },
       el('button', { onclick: () => scoutScreen(home) }, 'スカウト'),
-      el('button', { onclick: () => roster(home) }, `名鑑 ${Object.keys(bb.players).length} / ${PLAYERS.length}`)));
+      el('button', { onclick: () => roster(home) }, `名鑑 ${Object.keys(bb.players).length} / ${PLAYERS.length}`)),
+    el('button', { class: 'mt', onclick: () => orderScreen(home) }, 'オーダー（打順）を組む'));
+}
+
+function statLine(id) {
+  const x = state.baseball.stats?.[id];
+  return x && x.ab ? el('div', { class: 'pstat' }, `${x.ab}打数 ${x.h}安打 ${x.hr}本塁打`) : null;
 }
 
 function playerCard(p, star, isNew = false) {
@@ -625,7 +662,8 @@ function playerCard(p, star, isNew = false) {
     el('div', { class: 'pnum' }, `#${p.num} ${p.pos}`),
     el('div', { class: 'pname' }, p.name),
     el('div', { class: 'pstar' }, '★'.repeat(star) + '☆'.repeat(5 - star)),
-    el('div', { class: 'pnote' }, p.note));
+    el('div', { class: 'pnote' }, p.note),
+    statLine(p.id));
 }
 
 function scoutScreen(back) {
@@ -690,6 +728,46 @@ function roster(back) {
           ? playerCard(p, Math.min(bb.players[p.id], 5))
           : el('div', { class: `pcard locked r-${r}` }, el('div', { class: 'pname' }, '？？？'), el('div', { class: 'pnum' }, p.pos))))));
     }),
+  );
+}
+
+// ---- オーダー（打順） ----
+function orderScreen(back) {
+  const bb = state.baseball;
+  const L = lineupOf(bb);
+  const owned = Object.keys(bb.players).length;
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, 'オーダー'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
+    el('p', { class: 'muted' }, '打順の枠を押して選手を選ぶ。正解したとき、強い選手は打球が伸びる（スーパーレア・レジェンドはホームランも）。'),
+    owned === 0 ? el('p', { class: 'panel' }, 'まだ選手がいません。スカウトで選手を集めよう。空いた枠は「助っ人」が打ちます。') : null,
+    L.map((id, i) => {
+      const p = id ? playerById(id) : null;
+      return el('button', { class: `slot ${p ? `r-${p.rarity}` : ''}`, disabled: owned === 0, onclick: () => pickForSlot(i, back) },
+        el('b', {}, `${i + 1}番`),
+        p ? [el('span', { class: `rtag r-${p.rarity}` }, RARITY_LABEL[p.rarity]), el('span', { class: 'bname' }, p.name),
+          el('span', { class: 'muted' }, `${p.pos} ${'★'.repeat(starOf(bb, id))}`)] : el('span', { class: 'muted' }, '助っ人'));
+    }),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'primary', disabled: owned === 0, onclick: () => { state = { ...state, baseball: autoLineup(state.baseball) }; persist(); orderScreen(back); } }, 'おまかせ（強い順に並べる）'),
+  );
+}
+
+function pickForSlot(slot, back) {
+  const bb = state.baseball;
+  const L = lineupOf(bb);
+  const ids = Object.keys(bb.players).filter(id => playerById(id))
+    .sort((x, y) => RARITIES.indexOf(playerById(y).rarity) - RARITIES.indexOf(playerById(x).rarity) || starOf(bb, y) - starOf(bb, x));
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, `${slot + 1}番に入れる選手`), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: () => orderScreen(back) }, 'もどる')),
+    el('p', { class: 'muted' }, 'ほかの打順にいる選手を選ぶと、入れかわる。'),
+    el('div', { class: 'pgrid' }, ids.map(id => {
+      const c = playerCard(playerById(id), starOf(bb, id));
+      const at = L.indexOf(id);
+      if (at >= 0) c.prepend(el('span', { class: 'badge gold' }, at === slot ? 'いまここ' : `いま${at + 1}番`));
+      c.classList.add('pick');
+      c.addEventListener('click', () => { state = { ...state, baseball: setSlot(state.baseball, slot, id) }; persist(); orderScreen(back); });
+      return c;
+    })),
   );
 }
 

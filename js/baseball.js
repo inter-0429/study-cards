@@ -28,7 +28,7 @@ const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const count = (v, max = Infinity) => (Number.isInteger(v) && v >= 0 && v <= max ? v : 0);
 
 export function emptyBaseball() {
-  return { points: 0, tickets: 0, players: {}, league: 0, leagueWins: 0, wins: 0, losses: 0, draws: 0 };
+  return { points: 0, tickets: 0, players: {}, league: 0, leagueWins: 0, wins: 0, losses: 0, draws: 0, lineup: [], stats: {} };
 }
 
 // 保存してあった記録の形を確かめる。おかしな項目だけ初期値にする
@@ -48,6 +48,23 @@ export function cleanBaseball(raw) {
       if (BY_ID.has(id) && Number.isInteger(n) && n >= 1 && n <= MAX_STAR) bb.players[id] = n;
     }
   }
+  // オーダー: 持っている選手か null（助っ人）。重複なし・9人まで
+  if (Array.isArray(raw.lineup)) {
+    const seen = new Set();
+    for (const id of raw.lineup.slice(0, 9)) {
+      if (id === null) bb.lineup.push(null);
+      else if (typeof id === 'string' && bb.players[id] && !seen.has(id)) { seen.add(id); bb.lineup.push(id); }
+    }
+  }
+  // 成績: 打数 ≧ ヒット ≧ ホームラン
+  if (isObj(raw.stats)) {
+    for (const id of Object.keys(raw.stats)) {
+      const x = raw.stats[id];
+      if (!BY_ID.has(id) || !isObj(x)) continue;
+      const ok = [x.ab, x.h, x.hr].every(v => Number.isInteger(v) && v >= 0) && x.hr <= x.h && x.h <= x.ab;
+      if (ok) bb.stats[id] = { ab: x.ab, h: x.h, hr: x.hr };
+    }
+  }
   return bb;
 }
 
@@ -57,13 +74,14 @@ export function newGame(league, rng = Math.random) {
   const total = L.min + Math.floor(rng() * (L.max - L.min + 1));
   const opp = Array(INNINGS).fill(0);
   for (let i = 0; i < total; i++) opp[Math.floor(rng() * INNINGS)]++;
-  return { league: LEAGUES.indexOf(L), inning: 1, outs: 0, bases: [false, false, false], runs: 0, opp, streak: 0, prevOk: false, atBats: 0, pinchUsed: false };
+  return { league: LEAGUES.indexOf(L), batter: 0, inning: 1, outs: 0, bases: [false, false, false], runs: 0, opp, streak: 0, prevOk: false, atBats: 0, pinchUsed: false };
 }
 
-// 1打席。ok: 正解したか、written: 記入問題か
-export function atBat(game, { ok, written }) {
+// 1打席。ok: 正解したか、written: 記入問題か、batter: 打つ選手（null は助っ人）、star: その★
+export function atBat(game, { ok, written, batter = null, star = 1 }, rng = Math.random) {
   const g = { ...game, bases: [...game.bases], opp: [...game.opp] };
   g.atBats++;
+  g.batter = ((g.batter | 0) + 1) % 9;
   let result;
   let scored = 0;
   if (!ok) {
@@ -76,6 +94,8 @@ export function atBat(game, { ok, written }) {
   }
   if (written) result = g.prevOk ? 'hr' : 'double';
   else result = g.streak + 1 >= 3 ? 'double' : 'single';
+  const up = boostResult(result, batter, star, rng);
+  result = up.result;
   const [b1, b2, b3] = g.bases;
   if (result === 'single') { scored = +b3; g.bases = [true, b1, b2]; }
   else if (result === 'double') { scored = +b2 + +b3; g.bases = [false, true, b1]; }
@@ -83,7 +103,7 @@ export function atBat(game, { ok, written }) {
   g.runs += scored;
   g.streak++;
   g.prevOk = true;
-  return { game: g, result, scored };
+  return { game: g, result, scored, boosted: up.boosted };
 }
 
 export function isOver(game) {
@@ -189,4 +209,58 @@ export function canPinchHit(bb) {
     const p = BY_ID.get(id);
     return p && (p.rarity === 'SR' || p.rarity === 'L');
   }).length >= 3;
+}
+
+// ---- オーダー・打球の伸び・成績（2026-11-25） ----
+// 正解したときだけ、強い選手は打球が伸びる。[ヒット→二塁打 %, 二塁打→ホームラン %]。★が1つ増えるごとに +5%
+export const BOOST = { N: [0, 0], R: [10, 0], SR: [25, 10], L: [40, 25] };
+const STAR_BONUS = 5;
+
+export function boostResult(result, player, star = 1, rng = Math.random) {
+  if (!player || (result !== 'single' && result !== 'double')) return { result, boosted: false };
+  const [s2d, d2h] = BOOST[player.rarity] || [0, 0];
+  const base = result === 'single' ? s2d : d2h;
+  if (base <= 0) return { result, boosted: false };
+  const chance = base + STAR_BONUS * (Math.min(Math.max(star | 0, 1), MAX_STAR) - 1);
+  if (rng() * 100 >= chance) return { result, boosted: false };
+  return { result: result === 'single' ? 'double' : 'hr', boosted: true };
+}
+
+function ownedByPower(bb) {
+  return Object.keys(bb.players).filter(id => BY_ID.has(id))
+    .sort((a, b) => powerOf(BY_ID.get(b), starOf(bb, b)) - powerOf(BY_ID.get(a), starOf(bb, a)) || (a < b ? -1 : 1));
+}
+
+// 1番〜9番の選手 ID（null は助っ人）。組んだ順を守り、空き・持っていない選手の枠は強い順で埋める
+export function lineupOf(bb) {
+  const owned = new Set(Object.keys(bb.players).filter(id => BY_ID.has(id)));
+  const used = new Set();
+  const slots = Array.from({ length: 9 }, (_, i) => {
+    const id = (bb.lineup || [])[i];
+    if (typeof id === 'string' && owned.has(id) && !used.has(id)) { used.add(id); return id; }
+    return null;
+  });
+  const rest = ownedByPower(bb).filter(id => !used.has(id));
+  return slots.map(id => id ?? rest.shift() ?? null);
+}
+
+export function autoLineup(bb) {
+  return { ...bb, lineup: ownedByPower(bb).slice(0, 9) };
+}
+
+// slot（0〜8）に選手を入れる。別の枠にいれば入れかえる
+export function setSlot(bb, slot, id) {
+  if (!Number.isInteger(slot) || slot < 0 || slot > 8 || !bb.players[id] || !BY_ID.has(id)) return bb;
+  const L = lineupOf(bb);
+  const j = L.indexOf(id);
+  if (j >= 0) L[j] = L[slot];
+  L[slot] = id;
+  return { ...bb, lineup: L };
+}
+
+export function recordStat(bb, id, result) {
+  if (!id || !BY_ID.has(id)) return bb;
+  const x = bb.stats?.[id] || { ab: 0, h: 0, hr: 0 };
+  const y = { ab: x.ab + 1, h: x.h + (result === 'out' ? 0 : 1), hr: x.hr + (result === 'hr' ? 1 : 0) };
+  return { ...bb, stats: { ...(bb.stats || {}), [id]: y } };
 }
