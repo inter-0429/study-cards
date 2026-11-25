@@ -94,7 +94,7 @@ export function makeRecord(q, unit, ok, given, now, subjectName = '', extra = {}
   return {
     at: stamp(now),
     id: q.id,
-    stage: subjectName && stage ? `${subjectName} ${stage}` : stage,
+    stage: (extra && extra.mode === 'game' ? '⚾試合 ' : '') + (subjectName && stage ? `${subjectName} ${stage}` : stage),
     type: TYPE[q.type] || String(q.type),
     ok: !!ok,
     q: q.q,

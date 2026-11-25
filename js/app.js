@@ -1,6 +1,6 @@
 // 画面。ロジックは engine.js、保存は store.js にある。
 import {
-  createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickTimedIndex,
+  createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickGame, pickTimedIndex,
   pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput, underDailyMax, DAILY_MAX,
   unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits, whyWrong,
 } from './engine.js';
@@ -14,6 +14,11 @@ import {
   urasOf, uraOpen,
 } from './boss.js';
 import { SCORES, playScore } from './sound.js';
+import {
+  RARITIES, RARITY_LABEL, ODDS, LEAGUES, INNINGS, WIN_TO_PROMOTE, POINTS_PER_TICKET,
+  newGame, atBat, isOver, finishGame, oppRunsShown, earnPoints, applyResult, scout, playerById, teamPower, canPinchHit,
+} from './baseball.js';
+import { PLAYERS } from '../data/players.js';
 import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
 
 const TIMED_SECONDS = 10;
@@ -130,7 +135,7 @@ function subjectCard(S) {
     sum.weakest ? el('p', { class: 'mt' }, el('span', { class: 'badge lv-weak' }, '苦手'), ' ',
       `${sum.weakest.unit.stage}「${sum.weakest.unit.title}」 ${pct(sum.weakest.accuracy)}%`) : null,
     noRange ? el('p', { class: 'muted mt' }, '範囲に入っている試験がありません。「開く」→「ステージ」で選んでください。') : null,
-    el('div', { class: 'mt' }), missionButton(S),
+    el('div', { class: 'mt' }), missionButton(S), gameButton(S),
     el('button', { class: 'mt', onclick: () => subjectHome(S) }, `${S.name}を開く`),
     el('p', { class: 'muted center note' }, '特訓・ステージ・試験ごとの得意と苦手はここから'));
 }
@@ -145,6 +150,7 @@ function home() {
       el('p', {}, '教科を選んで、黄色いボタン「今日のミッション」を押して、5問に答えてみよう。'),
       el('button', { class: 'small', onclick: help }, 'くわしい遊び方を見る')) : null,
     rankPanel(),
+    baseballPanel(),
     el('p', { class: 'muted note' }, '教科ごとの正答率と、いちばん苦手な試験が出ます。毎日まずはミッション（5問で3分くらい）'),
     SUBJECTS.map(subjectCard),
     el('div', { class: 'grid2' },
@@ -176,6 +182,8 @@ function subjectHome(S) {
     noRange ? el('div', { class: 'panel' }, el('p', {}, '挑戦できる試験がありません。'), el('p', { class: 'muted' }, '「ステージ」で範囲に入れる試験を選んでください。')) : null,
     missionButton(S),
     el('p', { class: 'muted center note' }, '毎日まずはここ。5問で3分くらい。移動中におすすめ'),
+    gameButton(S),
+    el('p', { class: 'muted center note' }, '問題が打席になる野球の試合。正解でスカウトポイント'),
     el('button', { class: 'secondary', disabled: noRange, onclick: () => startTraining(S) },
       v > 0 ? `特訓（15分）・ヴィラン ${v} 体` : '特訓（15分）'),
     el('p', { class: 'muted center note' }, 'まちがえた問題と苦手な試験を集中して復習。家で時間があるときに'),
@@ -218,6 +226,12 @@ const HELP = [
     `ごほうび：単元ボスは初めて倒すと${REWARD.unit.first}円、2回目からは${REWARD.unit.again}円。教科ボスは初めて${REWARD.subject.first}円、2回目からは${REWARD.subject.again}円。`,
     '2回目からのごほうびは、同じボスで1日1回まで（挑戦は何回でもできる）。倒したらおうちの人に見せてね。',
     `撃破すると経験値ボーナス（単元ボス +${BOSS_XP.unit}、教科ボス +${BOSS_XP.subject}）。途中で「やめる」と、その回は記録されない。`,
+  ]],
+  ['⚾ 野球モード（試合とスカウト）', [
+    '教科を開いて「⚾ 試合」。問題が打席になる。正解はヒット、3連続正解は二塁打、記入問題の正解は二塁打で、前の打席も正解ならホームラン。まちがえるとアウト。',
+    '3イニング（問題は最大12問）で、相手チームより点が多ければ勝ち。3勝するとリーグが上がって、相手が強くなる。',
+    '正解するとスカウトポイント。記入問題の正解は3ポイント、ほかの正解は1ポイント（ミッション・特訓・試合。ボス戦はなし）。10ポイントでスカウト券1枚。試合に勝つと券がもう1枚。',
+    'スカウト券で選手を引ける（すべて架空の選手120人）。同じ選手が出たら★が増える（★5まで）。スーパーレア以上が3人そろうと、試合で1回だけ「代打」が使える（まちがえた打席のアウトを取り消して、次の問題で打ち直す）。',
   ]],
   ['ヴィラン（苦手な問題）', [
     '同じ問題を2回まちがえると、その問題が「ヴィラン」になります。',
@@ -269,7 +283,8 @@ function startQuiz(mode, questions, opts = {}) {
   }
   const subject = opts.subject || subjectOfUnit(questions[0].unit);
   session = {
-    mode, questions, subject, idx: 0, timedIdx: mode === 'boss' ? -1 : pickTimedIndex(questions), retried: false,
+    mode, questions, subject, idx: 0, timedIdx: mode === 'boss' || mode === 'game' ? -1 : pickTimedIndex(questions), retried: false,
+    game: mode === 'game' ? newGame(state.baseball.league) : null, pendingOut: false, pts: 0, tickets0: state.baseball.tickets,
     xp: 0, combo: 0, maxCombo: 0, newCards: [], defeated: 0, born: 0, rankUp: null, correct: 0,
     answers: [], startedAt: Date.now(), // ボス戦: 答えをためておき、最後にまとめて採点する
     label: opts.label || (mode === 'mission' ? `${subject.name} 今日のミッション` : ''), onDone: opts.onDone || result,
@@ -293,6 +308,7 @@ function showQuestion() {
   const fb = el('div');
   const area = el('div');
   const timerBar = el('span', { style: 'width:100%' });
+  const sbWrap = el('div', {}, s.game ? scoreboard(s.game) : null);
 
   // given: 子どもの答え（4択=番号・○×=true/false・並べ替え=押した順・入力=文字）。答えていないときは null
   function finish(ok, showCorrect, given) {
@@ -309,8 +325,13 @@ function showQuestion() {
     }
     refreshDay();
     const r = recordAnswer(state, q, ok, { timed: timed && ok, now: Date.now() });
-    state = r.state; persist();
-    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now(), subjectOfUnit(q.unit)?.name, sendExtra(sec)));
+    state = r.state;
+    const written = q.type === 'input';
+    state = { ...state, baseball: earnPoints(state.baseball, { ok, written }) };
+    if (ok) s.pts += written ? 3 : 1;
+    persist();
+    const extra = sendExtra(sec);
+    enqueue(storage, makeRecord(q, unit, ok, given ?? null, Date.now(), subjectOfUnit(q.unit)?.name, s.mode === 'game' ? { ...extra, mode: 'game' } : extra));
     sendLater();
     for (const e of r.events) {
       if (e.type === 'xp') s.xp += e.amount;
@@ -320,6 +341,12 @@ function showQuestion() {
       if (e.type === 'rankUp') s.rankUp = e.rank;
     }
     if (ok) { s.correct++; s.combo++; s.maxCombo = Math.max(s.maxCombo, s.combo); } else s.combo = 0;
+    let play = null;
+    if (s.mode === 'game') {
+      if (!ok && !s.game.pinchUsed && canPinchHit(state.baseball)) s.pendingOut = true;
+      else play = playBall(s, ok, written);
+      sbWrap.replaceChildren(scoreboard(s.game));
+    }
     beep(ok ? 'ok' : 'ng');
     showCorrect();
     const defeated = r.events.some(e => e.type === 'villainDefeated');
@@ -328,9 +355,11 @@ function showQuestion() {
       el('div', { class: 'big' }, ok ? (s.combo >= 3 ? `○ ${s.combo}コンボ！` : '○ 正解！') : '× ざんねん'),
       defeated ? el('p', {}, el('span', { class: 'badge villain' }, 'ヴィラン撃破！ +30')) : null,
       born ? el('p', {}, el('span', { class: 'badge villain' }, 'この問題がヴィランになった…次で倒そう')) : null,
+      play ? playLine(play) : null,
+      s.pendingOut ? el('button', { class: 'boss mt', onclick: pinchHit }, '代打！ このアウトを取り消して次の問題で打ち直す（1試合に1回）') : null,
       whyBox(q, given),
       el('p', {}, q.exp),
-      el('button', { class: 'primary mt', onclick: next }, s.idx + 1 < s.questions.length ? '次へ' : '結果を見る')));
+      el('button', { class: 'primary mt', onclick: next }, s.idx + 1 < s.questions.length && !(s.game && isOver(s.game)) ? '次へ' : '結果を見る')));
     fb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -420,8 +449,10 @@ function showQuestion() {
           bossList(s.subject);
           return;
         }
+        if (s.mode === 'game' && !window.confirm('試合をやめる？ 勝ち負けは記録されません（答えた分とポイントは残る）。')) return;
         stopTimer(); subjectHome(s.subject);
       } }, 'やめる')),
+    s.mode === 'game' ? sbWrap : null,
     el('p', { class: 'muted' }, `${s.subject.name} ${unit.stage}「${unit.title}」`,
       rec?.villain ? ' ' : null, rec?.villain ? el('span', { class: 'badge villain' }, 'ヴィラン') : null),
     s.mode === 'boss' ? el('div', { class: 'bar boss' }, el('span', { style: `width:${pct(s.idx / s.questions.length)}%` })) : null,
@@ -454,7 +485,16 @@ function showQuestion() {
     if (!document.hidden) startTimer();
   }
 
+  function pinchHit() {
+    s.pendingOut = false;
+    s.game = { ...s.game, pinchUsed: true };
+    // 同じ問題は正解が見えているので出さない。アウトを数えずに次の問題へ
+    next();
+  }
+
   function next() {
+    if (s.pendingOut) { s.pendingOut = false; playBall(s, false, false); }
+    if (s.game && isOver(s.game)) { s.onDone(s); return; }
     s.idx++;
     if (s.idx >= s.questions.length && s.mode === 'training' && !s.retried) {
       // 特訓: 正解したけれどまだ倒せていないヴィランを、ラウンドの最後にもう一度出す
@@ -473,6 +513,7 @@ function result(s) {
     el('div', { class: 'panel' },
       el('p', {}, `正解 ${s.correct} / ${s.questions.length}`),
       el('p', {}, `獲得経験値 +${s.xp}`),
+      s.pts ? el('p', {}, `スカウトポイント +${s.pts}（券 ${state.baseball.tickets}枚）`) : null,
       s.maxCombo >= 2 ? el('p', {}, `最大 ${s.maxCombo} コンボ`) : null,
       s.defeated ? el('p', {}, el('span', { class: 'badge villain' }, `ヴィラン撃破 ${s.defeated} 体`)) : null,
       s.born ? el('p', { class: 'muted' }, `新しいヴィラン ${s.born} 体。特訓で倒そう`) : null),
@@ -483,6 +524,161 @@ function result(s) {
     el('button', { onclick: () => subjectHome(s.subject) }, `${s.subject.name}の画面へ`),
     el('div', { class: 'mt' }),
     el('button', { class: 'ghost', onclick: home }, '教科の一覧へ'),
+  );
+}
+
+// ---- 野球モード（試合とスカウト） ----
+const PLAY_LABEL = { single: 'ヒット！', double: '二塁打！', hr: 'ホームラン！！', out: 'アウト' };
+
+function playBall(s, ok, written) {
+  const before = s.game.inning;
+  const r = atBat(s.game, { ok, written });
+  s.game = r.game;
+  return { ...r, change: r.game.inning !== before && !isOver(r.game), oppInning: s.game.opp[before - 1] };
+}
+
+function playLine(p) {
+  return el('div', { class: `play ${p.result} pop` },
+    el('div', { class: 'big' }, PLAY_LABEL[p.result], p.scored ? ` ${p.scored}点！` : ''),
+    p.change ? el('p', {}, `スリーアウト チェンジ！ 相手の攻撃は ${p.oppInning}点`) : null);
+}
+
+function scoreboard(g) {
+  const L = LEAGUES[g.league];
+  const inn = Math.min(g.inning, INNINGS);
+  return el('div', { class: 'scoreboard' },
+    el('div', { class: 'row' }, el('span', { class: 'badge' }, L.name), el('span', { class: 'spacer' }),
+      el('b', {}, `${inn}回`), el('span', { class: 'outs' }, '●'.repeat(g.outs) + '○'.repeat(3 - g.outs))),
+    el('div', { class: 'score' },
+      el('span', { class: 'tname' }, 'きみのチーム'), el('b', {}, String(g.runs)), el('span', { class: 'muted' }, '－'),
+      el('b', {}, String(oppRunsShown(g))), el('span', { class: 'tname' }, L.team)),
+    el('div', { class: 'diamond' }, [['b2', 1], ['b3', 2], ['b1', 0]].map(([c, i]) => el('span', { class: `base ${c}${g.bases[i] ? ' on' : ''}` }))));
+}
+
+function gameButton(S) {
+  return el('button', { class: 'game', disabled: enabledUnits(S).length === 0, onclick: () => startGame(S) }, '⚾ 試合（3〜5分）');
+}
+
+function startGame(S) {
+  const qs = pickGame(state, S.questions);
+  if (!qs.length) { dailyDone(S); return; }
+  startQuiz('game', qs, { subject: S, label: `⚾ ${S.name} 試合`, onDone: gameResult });
+}
+
+function gameResult(s) {
+  const outcome = finishGame(s.game);
+  const L = LEAGUES[s.game.league];
+  const r = applyResult(state.baseball, outcome);
+  state = { ...state, baseball: r.bb };
+  persist();
+  if (outcome === 'win') fanfare('boss'); else if (s.rankUp) fanfare('rankUp');
+  const got = state.baseball.tickets - s.tickets0;
+  const title = { win: '勝利！', lose: '負け…', draw: '引き分け' }[outcome];
+  const oppTotal = s.game.opp.reduce((x, y) => x + y, 0);
+  screen(
+    el('h1', { class: `center ${outcome === 'win' ? 'pop' : ''}` }, `⚾ ${title}`),
+    scoreboard({ ...s.game, inning: INNINGS + 1, outs: 0, bases: [false, false, false] }),
+    r.promoted ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'リーグ昇格！'), el('div', { class: 'rank' }, LEAGUES[state.baseball.league].name)) : null,
+    s.rankUp ? el('div', { class: 'panel center pop' }, el('div', { class: 'muted' }, 'レベルアップ！'), el('div', { class: 'rank' }, s.rankUp)) : null,
+    el('div', { class: 'panel' },
+      el('p', {}, `${L.team}に ${s.game.runs} 対 ${oppTotal}`),
+      el('p', {}, `正解 ${s.correct} / ${s.game.atBats}・獲得経験値 +${s.xp}`),
+      el('p', {}, `スカウトポイント +${s.pts}${outcome === 'win' ? '・勝利ボーナスで券 +1' : ''}`),
+      el('p', { class: 'gold' }, `スカウト券 ${state.baseball.tickets}枚${got > 0 ? `（この試合で +${got}）` : ''}`),
+      outcome !== 'win' ? el('p', { class: 'muted' }, '記入問題で正解すると長打が出やすいよ') : null,
+      s.defeated ? el('p', {}, el('span', { class: 'badge villain' }, `ヴィラン撃破 ${s.defeated} 体`)) : null),
+    el('button', { class: 'primary', onclick: () => startGame(s.subject) }, 'もう1試合'),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'boss', onclick: () => scoutScreen(() => subjectHome(s.subject)) }, `スカウトへ（券 ${state.baseball.tickets}枚）`),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'ghost', onclick: () => subjectHome(s.subject) }, `${s.subject.name}の画面へ`),
+  );
+}
+
+function baseballPanel() {
+  const bb = state.baseball;
+  const top = bb.league >= LEAGUES.length - 1;
+  return el('div', { class: 'panel bbpanel' },
+    el('div', { class: 'row' }, el('h3', {}, '⚾ 野球'), el('span', { class: 'spacer' }), el('span', { class: 'badge gold' }, `スカウト券 ${bb.tickets}枚`)),
+    el('p', {}, LEAGUES[bb.league].name, top ? '（最上位リーグ）' : `（あと ${WIN_TO_PROMOTE - bb.leagueWins} 勝で昇格）`),
+    el('p', { class: 'muted' }, `通算 ${bb.wins}勝 ${bb.losses}敗 ${bb.draws}分・スカウトポイント ${bb.points} / ${POINTS_PER_TICKET}`),
+    el('div', { class: 'bar' }, el('span', { style: `width:${pct(bb.points / POINTS_PER_TICKET)}%` })),
+    el('p', { class: 'muted note' }, '教科を開いて「⚾ 試合」。正解でスカウトポイント（記入問題の正解は3ポイント）'),
+    el('div', { class: 'grid2' },
+      el('button', { onclick: () => scoutScreen(home) }, 'スカウト'),
+      el('button', { onclick: () => roster(home) }, `名鑑 ${Object.keys(bb.players).length} / ${PLAYERS.length}`)));
+}
+
+function playerCard(p, star, isNew = false) {
+  return el('div', { class: `pcard r-${p.rarity}` },
+    el('div', { class: 'prar' }, RARITY_LABEL[p.rarity], isNew ? el('span', { class: 'badge gold' }, 'NEW') : null),
+    el('div', { class: 'pnum' }, `#${p.num} ${p.pos}`),
+    el('div', { class: 'pname' }, p.name),
+    el('div', { class: 'pstar' }, '★'.repeat(star) + '☆'.repeat(5 - star)),
+    el('div', { class: 'pnote' }, p.note));
+}
+
+function scoutScreen(back) {
+  const bb = state.baseball;
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, 'スカウト'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
+    el('div', { class: 'panel' },
+      el('div', { class: 'rank' }, `スカウト券 ${bb.tickets}枚`),
+      el('p', { class: 'muted' }, `ポイント ${bb.points} / ${POINTS_PER_TICKET}（記入問題の正解は3、ほかの正解は1。試合に勝つと券 +1）`),
+      el('div', { class: 'bar' }, el('span', { style: `width:${pct(bb.points / POINTS_PER_TICKET)}%` }))),
+    el('button', { class: 'primary', disabled: bb.tickets < 1, onclick: () => doScout(1, back) }, '1回スカウト（券1枚）'),
+    el('div', { class: 'mt' }),
+    el('button', { class: 'boss', disabled: bb.tickets < 10, onclick: () => doScout(10, back) }, '10連スカウト（券10枚・レア以上1人確定）'),
+    bb.tickets < 1 ? el('p', { class: 'muted center note' }, '券がないときは、教科の「⚾ 試合」やミッションで正解してポイントをためよう') : null,
+    el('div', { class: 'panel mt' }, el('h3', {}, '出る確率'),
+      [...RARITIES].reverse().map(r => el('div', { class: 'row' }, el('span', { class: `rtag r-${r}` }, RARITY_LABEL[r]), el('span', { class: 'spacer' }), el('span', {}, `${ODDS[r]}%`)))),
+    el('button', { onclick: () => roster(back) }, '名鑑を見る'),
+  );
+}
+
+function doScout(n, back) {
+  const r = scout(state.baseball, n);
+  if (!r.pulls.length) { scoutScreen(back); return; }
+  state = { ...state, baseball: r.bb };
+  persist();
+  const best = r.pulls.reduce((m, p) => (RARITIES.indexOf(p.rarity) > RARITIES.indexOf(m) ? p.rarity : m), 'N');
+  screen(el('div', { class: 'scouting' }, el('div', { class: `ball r-${best}` }), el('p', { class: 'center muted' }, 'スカウト中…')));
+  setTimeout(() => {
+    if (best === 'L') fanfare('rankUp'); else beep('card');
+    screen(
+      el('h1', { class: 'center' }, best === 'L' ? 'レジェンド登場！！' : best === 'SR' ? 'スーパーレア！' : 'スカウト結果'),
+      el('div', { class: 'pgrid' }, r.pulls.map(p => {
+        const c = playerCard(playerById(p.id), p.star, p.isNew);
+        c.classList.add('pop');
+        return c;
+      })),
+      el('button', { class: 'primary', disabled: state.baseball.tickets < n, onclick: () => doScout(n, back) }, `もう一度（券 ${n}枚・のこり ${state.baseball.tickets}枚）`),
+      el('div', { class: 'mt' }),
+      el('button', { onclick: () => scoutScreen(back) }, 'スカウトの画面へ'),
+      el('div', { class: 'mt' }),
+      el('button', { class: 'ghost', onclick: () => roster(back) }, '名鑑を見る'),
+    );
+  }, 1200);
+}
+
+function roster(back) {
+  const bb = state.baseball;
+  const sr = PLAYERS.filter(p => (p.rarity === 'SR' || p.rarity === 'L') && bb.players[p.id]).length;
+  screen(
+    el('div', { class: 'row' }, el('h1', {}, '選手名鑑'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
+    el('div', { class: 'panel' },
+      el('p', {}, `集めた選手 ${Object.keys(bb.players).length} / ${PLAYERS.length}`),
+      el('p', {}, `チーム力 ${teamPower(bb)}（強い順に9人の合計）`),
+      el('p', { class: canPinchHit(bb) ? 'gold' : 'muted' }, canPinchHit(bb) ? '代打が使える！（スーパーレア以上が3人）' : `代打まで：スーパーレア以上があと ${3 - sr} 人`)),
+    [...RARITIES].reverse().map(r => {
+      const list = PLAYERS.filter(p => p.rarity === r);
+      return el('div', { class: 'panel' },
+        el('div', { class: 'row' }, el('h3', {}, el('span', { class: `rtag r-${r}` }, RARITY_LABEL[r])), el('span', { class: 'spacer' }),
+          el('span', { class: 'muted' }, `${list.filter(p => bb.players[p.id]).length} / ${list.length}`)),
+        el('div', { class: 'pgrid' }, list.map(p => (bb.players[p.id]
+          ? playerCard(p, Math.min(bb.players[p.id], 5))
+          : el('div', { class: `pcard locked r-${r}` }, el('div', { class: 'pname' }, '？？？'), el('div', { class: 'pnum' }, p.pos))))));
+    }),
   );
 }
 

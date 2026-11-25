@@ -1,5 +1,6 @@
 // ゲームの中心ロジック。画面（DOM）には触れない純粋な関数だけを置く。
 import { URA } from '../data/ura.js';
+import { emptyBaseball } from './baseball.js';
 
 export const XP_CORRECT = 10;
 export const XP_TIMED_BONUS = 5;
@@ -43,7 +44,7 @@ function clone(v) {
 }
 
 export function createState() {
-  return { xp: 0, qs: {}, cards: [], days: { last: null, count: 0 }, enabled: null, sound: true, bosses: {} };
+  return { xp: 0, qs: {}, cards: [], days: { last: null, count: 0 }, enabled: null, sound: true, bosses: {}, baseball: emptyBaseball() };
 }
 
 export function rankFor(xp) {
@@ -237,6 +238,21 @@ export function pickMission(state, questions, rng = Math.random, now = Date.now(
     { qs: seenOldest },
     { qs: shuffle(pool, rng) },
   ], SET_SIZE, { rng });
+  return shuffle(picked, rng);
+}
+
+// 野球の試合の問題（最大12問）。選び方はミッションと同じ（記入が半分・ヴィラン優先・1日3回まで）
+export const GAME_SIZE = 12;
+export function pickGame(state, questions, rng = Math.random, now = Date.now()) {
+  const pool = questions.filter(q => isEnabled(state, q.unit) && underDailyMax(state, q, now));
+  const rec = q => state.qs[q.id];
+  const seenOldest = pool.filter(q => rec(q) && !rec(q).villain).sort((a, b) => (rec(a).lastAt ?? 0) - (rec(b).lastAt ?? 0));
+  const picked = mixSet([
+    { qs: shuffle(pool.filter(q => rec(q)?.villain), rng), max: 3, must: true },
+    { qs: shuffle(pool.filter(q => !rec(q)), rng), max: 3, must: true },
+    { qs: seenOldest },
+    { qs: shuffle(pool, rng) },
+  ], Math.min(GAME_SIZE, pool.length), { rng });
   return shuffle(picked, rng);
 }
 

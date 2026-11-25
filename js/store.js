@@ -1,5 +1,6 @@
 // 記録の保存。iPhone のブラウザの中（localStorage）だけに保存し、外には送らない。
 import { createState } from './engine.js';
+import { cleanBaseball } from './baseball.js';
 
 export const KEY = 'hero-study-v1';
 
@@ -19,6 +20,7 @@ function sanitize(raw) {
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
   if (Array.isArray(raw.known) && raw.known.every(x => typeof x === 'string')) s.known = raw.known;
   if (isObj(raw.bosses)) s.bosses = cleanBosses(raw.bosses);
+  s.baseball = cleanBaseball(raw.baseball);
   return s;
 }
 
