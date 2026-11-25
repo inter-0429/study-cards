@@ -211,3 +211,45 @@ button.game { background: linear-gradient(135deg, #0f8a4a, #2fd27a); border-colo
 button.slot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; text-align: left; margin-bottom: 6px; min-height: 52px; }
 .pcard.pick { cursor: pointer; }
 .pcard .pstat { font-size: 11px; font-weight: 700; margin-top: 2px; }
+
+/* ---- スカウトの演出（豪華版・2026-11-25） ---- */
+.stage { position: relative; min-height: 72vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; overflow: hidden; border-radius: var(--radius); background: radial-gradient(circle at 50% 45%, #2b3196 0%, #12154a 55%, #070818 100%); }
+.spot { position: absolute; top: -30%; width: 34%; height: 150%; background: linear-gradient(rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0)); transform-origin: top center; filter: blur(6px); animation: sweep 2.2s ease-in-out infinite alternate; pointer-events: none; }
+.spot.l { left: 8%; }
+.spot.r { right: 8%; animation-delay: -1.1s; }
+@keyframes sweep { from { transform: rotate(-28deg); } to { transform: rotate(28deg); } }
+.ball.rolling { animation: roll 0.5s linear infinite; transition: box-shadow 0.35s, background 0.35s; z-index: 1; }
+.ball.rolling.r-N { box-shadow: 0 0 24px 6px rgba(255, 255, 255, 0.5); }
+.ball.rolling.r-R { box-shadow: 0 0 36px 14px #5aa9ff; background: radial-gradient(circle at 35% 30%, #fff, #bfe3ff 60%, #5aa9ff); }
+.ball.rolling.r-SR { box-shadow: 0 0 48px 20px #ffb300; background: radial-gradient(circle at 35% 30%, #fff, #ffe680 55%, #ffb300); animation-duration: 0.3s; }
+.ball.rolling.r-L { box-shadow: 0 0 64px 28px #ff4fd8, 0 0 120px 40px #5ad1ff; background: conic-gradient(#ff9ad5, #b06cff, #5ad1ff, #7ff0b0, #ffd640, #ff9ad5); animation-duration: 0.18s; }
+@keyframes roll { to { transform: rotate(360deg); } }
+.steptext { font-size: 24px; font-weight: 800; z-index: 1; min-height: 1.4em; }
+.skip { position: absolute; right: 10px; bottom: 10px; z-index: 2; }
+.flash { position: fixed; inset: 0; z-index: 60; pointer-events: none; animation: flash 0.8s ease-out forwards; background: radial-gradient(circle, #fff 0%, rgba(255, 255, 255, 0.85) 30%, rgba(255, 255, 255, 0) 70%); }
+.flash.r-R { background: radial-gradient(circle, #fff 0%, #5aa9ff 35%, rgba(90, 169, 255, 0) 75%); }
+.flash.r-SR { background: radial-gradient(circle, #fff 0%, #ffd640 35%, rgba(255, 179, 0, 0) 80%); }
+.flash.r-L { background: radial-gradient(circle, #fff 0%, #ff9ad5 25%, #b06cff 45%, #5ad1ff 65%, rgba(90, 209, 255, 0) 90%); }
+@keyframes flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+.shake { animation: bigshake 0.6s; }
+@keyframes bigshake { 10%, 50%, 90% { transform: translate(-8px, 4px); } 30%, 70% { transform: translate(8px, -4px); } }
+.legend-text { font-size: 44px; font-weight: 900; letter-spacing: 4px; background: linear-gradient(90deg, #ff9ad5, #b06cff, #5ad1ff, #ffd640); -webkit-background-clip: text; background-clip: text; color: transparent; animation: pop 0.5s ease-out; }
+h1.legend-text.big { font-size: 30px; letter-spacing: 1px; }
+.flip { perspective: 700px; }
+.flip-inner { position: relative; transition: transform 0.55s cubic-bezier(0.3, 1.4, 0.5, 1); transform-style: preserve-3d; -webkit-transform-style: preserve-3d; }
+.flip.open .flip-inner { transform: rotateY(180deg); }
+.flip-front, .flip-back { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.flip-front { transform: rotateY(180deg); height: 100%; }
+.flip-back { position: absolute; inset: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 34px; border: 2px solid rgba(255, 255, 255, 0.3); background: repeating-linear-gradient(45deg, #2a2f8a 0 10px, #1d2260 10px 20px); }
+.flip.r-SR .flip-back { border-color: #ffd640; box-shadow: 0 0 12px #ffb300; }
+.flip.r-L .flip-back { border-color: #fff; box-shadow: 0 0 16px #ff4fd8; }
+.pcard.shine { position: relative; overflow: hidden; }
+.pcard.shine::after { content: ''; position: absolute; top: -50%; left: -60%; width: 40%; height: 200%; background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0)); transform: rotate(20deg); animation: shine 2.2s ease-in-out 0.8s infinite; }
+@keyframes shine { 0% { left: -60%; } 50%, 100% { left: 130%; } }
+.confetti-box { position: fixed; inset: 0; pointer-events: none; z-index: 55; overflow: hidden; }
+.confetti { position: absolute; top: -20px; width: 8px; height: 14px; border-radius: 2px; animation: fall 2.6s linear forwards; }
+@keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spot, .ball.rolling, .shake, .pcard.shine::after, .confetti { animation: none; }
+  .flip-inner { transition: none; }
+}
