@@ -2,7 +2,8 @@
 // v15: 地理総合を足した（data/chiri/）
 // v17: プレイヤーのレベルを Lv 1〜100 にした
 // v18: レベルの上限を Lv 1000 にした
-const CACHE = 'hero-study-v18';
+// v19: 野球モード（試合とスカウト）を足した
+const CACHE = 'hero-study-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +17,7 @@ const ASSETS = [
   './js/store.js',
   './js/sync.js',
   './js/boss.js',
+  './js/baseball.js',
   './js/sound.js',
   './data/index.js',
   './data/units.js',
@@ -31,6 +33,7 @@ const ASSETS = [
   './data/subjects.js',
   './data/yomi.js',
   './data/ura.js',
+  './data/players.js',
   './data/why/index.js',
   './data/why/rekishi.js',
   './data/why/kagaku.js',
