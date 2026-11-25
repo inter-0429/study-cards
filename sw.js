@@ -3,7 +3,8 @@
 // v17: プレイヤーのレベルを Lv 1〜100 にした
 // v18: レベルの上限を Lv 1000 にした
 // v19: 野球モード（試合とスカウト）を足した
-const CACHE = 'hero-study-v19';
+// v20: 野球モードの効果音（打球音・歓声・アウト・スカウト）
+const CACHE = 'hero-study-v20';
 const ASSETS = [
   './',
   './index.html',
@@ -18,6 +19,7 @@ const ASSETS = [
   './js/sync.js',
   './js/boss.js',
   './js/baseball.js',
+  './js/bbsound.js',
   './js/sound.js',
   './data/index.js',
   './data/units.js',
