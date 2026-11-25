@@ -48,7 +48,30 @@ const BOSS = {
   ],
 };
 
-export const SCORES = { rankUp: RANK_UP, boss: BOSS };
+// ホームラン: 駆け上がって高い音で決める（野球モード。約0.9秒）
+const HOMERUN = {
+  beat: 0.13,
+  notes: [
+    { n: 'G4', t: 0, d: 0.5, v: 'lead' }, { n: 'C5', t: 0.5, d: 0.5, v: 'lead' }, { n: 'E5', t: 1, d: 0.5, v: 'lead' },
+    { n: 'G5', t: 1.5, d: 1, v: 'lead' }, { n: 'E5', t: 2.5, d: 0.5, v: 'lead' }, { n: 'G5', t: 3, d: 0.5, v: 'lead' },
+    { n: 'C6', t: 3.5, d: 3, v: 'lead' },
+    { n: 'C5', t: 3.5, d: 3, v: 'pad' }, { n: 'E5', t: 3.5, d: 3, v: 'pad' }, { n: 'G5', t: 3.5, d: 3, v: 'pad' },
+    { n: 'C3', t: 0, d: 1.5, v: 'bass' }, { n: 'G2', t: 1.5, d: 2, v: 'bass' }, { n: 'C3', t: 3.5, d: 3, v: 'bass' },
+    { n: 'C7', t: 4, d: 1.5, v: 'spark' },
+  ],
+};
+
+// 試合開始: 短く明るい合図（野球モード。約0.8秒）
+const PLAYBALL = {
+  beat: 0.15,
+  notes: [
+    { n: 'C5', t: 0, d: 0.5, v: 'lead' }, { n: 'D5', t: 0.5, d: 0.5, v: 'lead' }, { n: 'E5', t: 1, d: 0.5, v: 'lead' },
+    { n: 'G5', t: 1.5, d: 1, v: 'lead' }, { n: 'E5', t: 2.5, d: 0.5, v: 'lead' }, { n: 'G5', t: 3, d: 2, v: 'lead' },
+    { n: 'C3', t: 0, d: 2, v: 'bass' }, { n: 'G2', t: 2, d: 1, v: 'bass' }, { n: 'C3', t: 3, d: 2, v: 'bass' },
+  ],
+};
+
+export const SCORES = { rankUp: RANK_UP, boss: BOSS, homerun: HOMERUN, playball: PLAYBALL };
 
 const SEMI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
@@ -64,9 +87,9 @@ export function scoreLength(score) {
   return Math.max(...score.notes.map(x => x.t + x.d)) * score.beat;
 }
 
-// ctx = AudioContext。鳴らせないときは何もしない
-export function playScore(ctx, score) {
-  const start = ctx.currentTime + 0.03;
+// ctx = AudioContext。鳴らせないときは何もしない。delay: 何秒あとから鳴らすか
+export function playScore(ctx, score, delay = 0) {
+  const start = ctx.currentTime + 0.03 + delay;
   const master = ctx.createGain();
   master.gain.value = 0.9;
   master.connect(ctx.destination);

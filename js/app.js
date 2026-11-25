@@ -19,6 +19,7 @@ import {
   newGame, atBat, isOver, finishGame, oppRunsShown, earnPoints, applyResult, scout, playerById, teamPower, canPinchHit,
 } from './baseball.js';
 import { PLAYERS } from '../data/players.js';
+import { playSfx } from './bbsound.js';
 import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
 
 const TIMED_SECONDS = 10;
@@ -82,6 +83,11 @@ function audioCtx() {
 function fanfare(kind) {
   if (!state.sound) return;
   try { playScore(audioCtx(), SCORES[kind]); } catch { /* 音が出せなくても続ける */ }
+}
+// 野球モードの効果音（bbsound.js）
+function sfx(name) {
+  if (!state.sound) return;
+  try { playSfx(audioCtx(), name); } catch { /* 音が出せなくても続ける */ }
 }
 function beep(kind) {
   if (!state.sound) return;
@@ -347,7 +353,10 @@ function showQuestion() {
       else play = playBall(s, ok, written);
       sbWrap.replaceChildren(scoreboard(s.game));
     }
-    beep(ok ? 'ok' : 'ng');
+    if (s.mode === 'game') {
+      sfx(play ? { single: 'hit', double: 'double', hr: 'hr', out: 'out' }[play.result] : 'out');
+      if (play?.change) setTimeout(() => sfx('change'), 900);
+    } else beep(ok ? 'ok' : 'ng');
     showCorrect();
     const defeated = r.events.some(e => e.type === 'villainDefeated');
     const born = r.events.some(e => e.type === 'villainBorn');
@@ -563,6 +572,7 @@ function startGame(S) {
   const qs = pickGame(state, S.questions);
   if (!qs.length) { dailyDone(S); return; }
   startQuiz('game', qs, { subject: S, label: `⚾ ${S.name} 試合`, onDone: gameResult });
+  sfx('playball');
 }
 
 function gameResult(s) {
@@ -571,7 +581,7 @@ function gameResult(s) {
   const r = applyResult(state.baseball, outcome);
   state = { ...state, baseball: r.bb };
   persist();
-  if (outcome === 'win') fanfare('boss'); else if (s.rankUp) fanfare('rankUp');
+  if (outcome === 'win') { fanfare('boss'); sfx('win'); } else if (s.rankUp) fanfare('rankUp');
   const got = state.baseball.tickets - s.tickets0;
   const title = { win: '勝利！', lose: '負け…', draw: '引き分け' }[outcome];
   const oppTotal = s.game.opp.reduce((x, y) => x + y, 0);
@@ -642,9 +652,10 @@ function doScout(n, back) {
   state = { ...state, baseball: r.bb };
   persist();
   const best = r.pulls.reduce((m, p) => (RARITIES.indexOf(p.rarity) > RARITIES.indexOf(m) ? p.rarity : m), 'N');
+  sfx('drumroll');
   screen(el('div', { class: 'scouting' }, el('div', { class: `ball r-${best}` }), el('p', { class: 'center muted' }, 'スカウト中…')));
   setTimeout(() => {
-    if (best === 'L') fanfare('rankUp'); else beep('card');
+    sfx(`reveal${best}`);
     screen(
       el('h1', { class: 'center' }, best === 'L' ? 'レジェンド登場！！' : best === 'SR' ? 'スーパーレア！' : 'スカウト結果'),
       el('div', { class: 'pgrid' }, r.pulls.map(p => {
