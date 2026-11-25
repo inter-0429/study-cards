@@ -684,30 +684,89 @@ function scoutScreen(back) {
   );
 }
 
+// スカウトの演出（豪華版）: スポットライト → ボールの色が段階的に上がる → フラッシュ → カードを1枚ずつめくる
+let scoutRun = null; // 画面を移ったら古い演出の続きを止める
+const STEP_TEXT = { N: 'スカウト中…', R: 'おっ…？', SR: 'これは…！', L: 'まさか…！！' };
+const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
+
+function confetti(best) {
+  if (reducedMotion()) return;
+  const colors = best === 'L' ? ['#ff9ad5', '#b06cff', '#5ad1ff', '#ffd640', '#7ff0b0'] : ['#ffd640', '#ffb300', '#fff3b0', '#ffffff'];
+  const box = el('div', { class: 'confetti-box' });
+  for (let i = 0; i < (best === 'L' ? 70 : 40); i++) {
+    box.append(el('span', { class: 'confetti', style: `left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${(Math.random() * 0.8).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.5).toFixed(2)}s` }));
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), 4500);
+}
+
 function doScout(n, back) {
   const r = scout(state.baseball, n);
   if (!r.pulls.length) { scoutScreen(back); return; }
   state = { ...state, baseball: r.bb };
   persist();
   const best = r.pulls.reduce((m, p) => (RARITIES.indexOf(p.rarity) > RARITIES.indexOf(m) ? p.rarity : m), 'N');
+  const token = {};
+  scoutRun = token;
+  const later = (ms, fn) => setTimeout(() => { if (scoutRun === token) fn(); }, ms);
+  const steps = RARITIES.slice(0, RARITIES.indexOf(best) + 1);
+
+  const ball = el('div', { class: 'ball rolling r-N' });
+  const text = el('p', { class: 'steptext' }, STEP_TEXT.N);
+  const stage = el('div', { class: 'stage' },
+    el('div', { class: 'spot l' }), el('div', { class: 'spot r' }),
+    ball, text,
+    el('button', { class: 'small ghost skip', onclick: () => showResult(true) }, 'スキップ ▶▶'));
   sfx('drumroll');
-  screen(el('div', { class: 'scouting' }, el('div', { class: `ball r-${best}` }), el('p', { class: 'center muted' }, 'スカウト中…')));
-  setTimeout(() => {
+  screen(stage);
+
+  // ボールの色を1段ずつ上げる
+  steps.slice(1).forEach((rar, k) => later(900 + k * 650, () => {
+    ball.className = `ball rolling r-${rar}`;
+    text.textContent = STEP_TEXT[rar];
+    text.classList.remove('pop'); void text.offsetWidth; text.classList.add('pop');
+    sfx('stepup');
+  }));
+  const flashAt = 900 + (steps.length - 1) * 650 + 300;
+  later(flashAt, () => {
+    document.body.append(el('div', { class: `flash r-${best}` }));
+    setTimeout(() => document.querySelector('.flash')?.remove(), 800);
     sfx(`reveal${best}`);
+    if (best === 'L') {
+      stage.classList.add('shake');
+      text.replaceChildren(el('span', { class: 'legend-text' }, 'LEGEND'));
+    }
+  });
+  later(flashAt + (best === 'L' ? 1300 : 700), () => showResult(false));
+
+  function showResult(skipped) {
+    if (scoutRun !== token) return;
+    scoutRun = null;
+    if (skipped) sfx(`reveal${best}`);
+    if (best === 'SR' || best === 'L') confetti(best);
+    const cards = r.pulls.map(p => {
+      const front = playerCard(playerById(p.id), p.star, p.isNew);
+      front.classList.add('flip-front');
+      if (p.rarity === 'SR' || p.rarity === 'L') front.classList.add('shine');
+      return el('div', { class: `flip r-${p.rarity}` }, el('div', { class: 'flip-inner' }, front, el('div', { class: 'flip-back' }, '⚾')));
+    });
     screen(
-      el('h1', { class: 'center' }, best === 'L' ? 'レジェンド登場！！' : best === 'SR' ? 'スーパーレア！' : 'スカウト結果'),
-      el('div', { class: 'pgrid' }, r.pulls.map(p => {
-        const c = playerCard(playerById(p.id), p.star, p.isNew);
-        c.classList.add('pop');
-        return c;
-      })),
+      el('h1', { class: `center ${best === 'L' ? 'legend-text big' : ''}` }, best === 'L' ? 'レジェンド登場！！' : best === 'SR' ? 'スーパーレア！' : 'スカウト結果'),
+      el('div', { class: 'pgrid' }, cards),
       el('button', { class: 'primary', disabled: state.baseball.tickets < n, onclick: () => doScout(n, back) }, `もう一度（券 ${n}枚・のこり ${state.baseball.tickets}枚）`),
       el('div', { class: 'mt' }),
       el('button', { onclick: () => scoutScreen(back) }, 'スカウトの画面へ'),
       el('div', { class: 'mt' }),
       el('button', { class: 'ghost', onclick: () => roster(back) }, '名鑑を見る'),
     );
-  }, 1200);
+    // 1枚ずつめくる（いいカードほど最後に）
+    const gap = reducedMotion() ? 0 : (n === 10 ? 160 : 300);
+    const order = r.pulls.map((p, i) => i).sort((x, y) => RARITIES.indexOf(r.pulls[x].rarity) - RARITIES.indexOf(r.pulls[y].rarity));
+    order.forEach((i, k) => setTimeout(() => {
+      cards[i].classList.add('open');
+      sfx(RARITIES.indexOf(r.pulls[i].rarity) >= 2 ? `reveal${r.pulls[i].rarity}` : 'flip');
+    }, 150 + k * gap));
+  }
 }
 
 function roster(back) {

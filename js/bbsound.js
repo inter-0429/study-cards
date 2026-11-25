@@ -35,6 +35,10 @@ export const SFX = {
   win: [cheer(0, 3.2, 0.28), ...claps(0.2, 24, 0.1)],
   playball: [score('playball', 0)],
   drumroll: Array.from({ length: 26 }, (_, i) => noise('highpass', 1500, 0.8, i * 0.04, 0.035, 0.02 + i * 0.003)),
+  // スカウトでボールの色が1段上がるとき: 上がっていく音＋きらっ
+  stepup: [tone('triangle', 523, 1047, 0, 0.3, 0.16), tone('sine', 1568, 2093, 0.18, 0.3, 0.1), noise('highpass', 4000, 0.7, 0.2, 0.25, 0.04)],
+  // カードをめくる音
+  flip: [noise('bandpass', 2200, 1.2, 0, 0.08, 0.12), tone('sine', 1200, 1600, 0, 0.08, 0.05)],
   revealN: [tone('sine', 880, 880, 0, 0.3, 0.2)],
   revealR: [tone('sine', 880, 880, 0, 0.2, 0.2), tone('sine', 1175, 1175, 0.1, 0.35, 0.2)],
   revealSR: [
