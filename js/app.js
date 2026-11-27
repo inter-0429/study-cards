@@ -21,6 +21,7 @@ import {
 } from './baseball.js';
 import { PLAYERS } from '../data/players.js';
 import { playSfx } from './bbsound.js';
+import { APP_VERSION } from './version.js';
 import { SUBJECTS, ALL_UNITS, ALL_QS, subjectOfUnit } from '../data/subjects.js';
 
 const TIMED_SECONDS = 10;
@@ -1173,6 +1174,66 @@ function devicePanel() {
     } }, '名前を保存')));
 }
 
+// ---- アプリの版と更新 ----
+// 保存してある（いちばん新しく届いた）版の番号。sw.js が新しい版を保存すると、ここが新しい番号になる
+async function latestVersion() {
+  try {
+    const t = await (await fetch(`js/version.js?check=${Date.now()}`)).text();
+    const m = t.match(/APP_VERSION = (\d+)/);
+    return m ? Number(m[1]) : APP_VERSION;
+  } catch { return APP_VERSION; }
+}
+
+// 新しい版を取りにいき、保存が終わるまで待つ（最大20秒）
+async function fetchUpdate() {
+  if (!('serviceWorker' in navigator)) return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) return;
+  await reg.update();
+  const w = reg.installing || reg.waiting;
+  if (!w) return;
+  await new Promise(res => {
+    const done = () => { if (w.state === 'activated' || w.state === 'redundant') res(); };
+    w.addEventListener('statechange', done);
+    done();
+    setTimeout(res, 20000);
+  });
+}
+
+function showUpdateBanner(v) {
+  if (document.querySelector('.update-banner')) return;
+  document.body.append(el('div', { class: 'update-banner' },
+    el('span', {}, `新しい版（v${v}）が届きました！`),
+    el('button', { class: 'small primary', onclick: () => location.reload() }, '更新する')));
+}
+
+// 開いたとき・アプリに戻ってきたときに、そっと確かめる
+async function checkForUpdate() {
+  try { await fetchUpdate(); } catch { /* 電波がないときは何もしない */ }
+  const v = await latestVersion();
+  if (v > APP_VERSION) showUpdateBanner(v);
+}
+
+function versionPanel() {
+  const msg = el('p', { class: 'muted' }, '新しい版が出たら、ここで更新できます。Wi-Fi のある所で押してね。');
+  const btn = el('button', { class: 'small', onclick: async () => {
+    btn.disabled = true;
+    msg.textContent = '新しい版があるか確かめています…（少し待ってね）';
+    try { await fetchUpdate(); } catch {
+      msg.textContent = '確かめられませんでした。インターネットにつないで、もう一度押してください。';
+      btn.disabled = false;
+      return;
+    }
+    const v = await latestVersion();
+    if (v > APP_VERSION) { msg.textContent = `新しい版（v${v}）にします…`; location.reload(); return; }
+    msg.textContent = `いまの版（v${APP_VERSION}）がいちばん新しいです。`;
+    btn.disabled = false;
+  } }, '更新する');
+  return el('div', { class: 'panel' },
+    el('div', { class: 'row' }, el('h3', {}, 'アプリの版'), el('span', { class: 'spacer' }), el('span', { class: 'badge gold' }, `v${APP_VERSION}`)),
+    msg, btn);
+}
+
 function settings(confirming = false, syncMsg = null) {
   const on = isOn(storage);
   screen(
@@ -1186,6 +1247,7 @@ function settings(confirming = false, syncMsg = null) {
         ? el('p', { class: 'muted' }, 'レベル・カードなどの記録はこの iPhone の中に保存されています。解いた結果（日時・問題・答え・正誤）は、おうちの人の Google スプレッドシートにも送られて、苦手なところの勉強に使います。')
         : el('p', { class: 'muted' }, '記録はこの iPhone の中だけに保存されていて、インターネットには送られません。'),
       el('p', { class: 'muted' }, 'Safari の「履歴とWebサイトデータを消去」をすると、記録も消えます。')),
+    versionPanel(),
     syncPanel(syncMsg),
     el('div', { class: 'panel' },
       el('h3', {}, '記録を消す'),
@@ -1205,8 +1267,8 @@ home();
 // ためてある結果を送る: 開いたとき・電波が戻ったとき・アプリに戻ってきたとき
 sendLater();
 window.addEventListener('online', sendLater);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) sendLater(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { sendLater(); checkForUpdate(); } });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').then(() => checkForUpdate()).catch(() => {}); });
 }
