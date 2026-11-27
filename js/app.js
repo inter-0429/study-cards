@@ -17,7 +17,7 @@ import { SCORES, playScore } from './sound.js';
 import {
   RARITIES, RARITY_LABEL, ODDS, LEAGUES, INNINGS, WIN_TO_PROMOTE, POINTS_PER_TICKET,
   newGame, atBat, isOver, finishGame, oppRunsShown, earnPoints, applyResult, scout, playerById, teamPower, canPinchHit,
-  lineupOf, autoLineup, setSlot, recordStat, starOf,
+  lineupOf, autoLineup, setSlot, recordStat, starOf, claimGifts,
 } from './baseball.js';
 import { PLAYERS } from '../data/players.js';
 import { playSfx } from './bbsound.js';
@@ -30,6 +30,12 @@ const storage = (() => { try { return window.localStorage; } catch { return null
 // あとから足した教科の単元は、最初は範囲に入れる（前の版の記録は歴史の単元だけを知っている）
 let state = includeNewUnits(touchDay(load(storage), Date.now()),
   ALL_UNITS.map(u => u.id), SUBJECTS.find(S => S.id === 'rekishi').units.map(u => u.id));
+// プレゼント（1つの iPhone で1回だけ）。受け取ったら最初の画面で知らせる
+let newGifts = [];
+{
+  const g = claimGifts(state.baseball);
+  if (g.got.length) { state = { ...state, baseball: g.bb }; newGifts = g.got; }
+}
 persist();
 
 function persist() { save(storage, state); }
@@ -156,6 +162,7 @@ function home() {
       el('p', {}, 'これは問題をゲームのように解いて覚えるアプリです。'),
       el('p', {}, '教科を選んで、黄色いボタン「今日のミッション」を押して、5問に答えてみよう。'),
       el('button', { class: 'small', onclick: help }, 'くわしい遊び方を見る')) : null,
+    giftPanel(),
     rankPanel(),
     baseballPanel(),
     el('p', { class: 'muted note' }, '教科ごとの正答率と、いちばん苦手な試験が出ます。毎日まずはミッション（5問で3分くらい）'),
@@ -634,6 +641,17 @@ function gameResult(s) {
     el('div', { class: 'mt' }),
     el('button', { class: 'ghost', onclick: () => subjectHome(s.subject) }, `${s.subject.name}の画面へ`),
   );
+}
+
+function giftPanel() {
+  if (!newGifts.length) return null;
+  const gifts = newGifts;
+  newGifts = [];
+  return el('div', { class: 'panel gift center pop' },
+    el('div', { class: 'giftbox' }, '🎁'),
+    gifts.map(g => el('div', { class: 'rank' }, g.title)),
+    el('p', {}, `スカウト券が ${state.baseball.tickets}枚 になったよ。`),
+    el('button', { class: 'boss mt', onclick: () => scoutScreen(home) }, 'スカウトへ行く'));
 }
 
 function baseballPanel() {

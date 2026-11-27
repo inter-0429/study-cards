@@ -29,7 +29,7 @@ const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const count = (v, max = Infinity) => (Number.isInteger(v) && v >= 0 && v <= max ? v : 0);
 
 export function emptyBaseball() {
-  return { points: 0, tickets: 0, players: {}, league: 0, leagueWins: 0, wins: 0, losses: 0, draws: 0, lineup: [], stats: {} };
+  return { points: 0, tickets: 0, players: {}, league: 0, leagueWins: 0, wins: 0, losses: 0, draws: 0, lineup: [], stats: {}, gifts: [] };
 }
 
 // 保存してあった記録の形を確かめる。おかしな項目だけ初期値にする
@@ -57,6 +57,8 @@ export function cleanBaseball(raw) {
       else if (typeof id === 'string' && bb.players[id] && !seen.has(id)) { seen.add(id); bb.lineup.push(id); }
     }
   }
+  // もらったプレゼント
+  if (Array.isArray(raw.gifts)) bb.gifts = [...new Set(raw.gifts.filter(g => typeof g === 'string' && GIFT_RE.test(g)))];
   // 成績: 打数 ≧ ヒット ≧ ホームラン
   if (isObj(raw.stats)) {
     for (const id of Object.keys(raw.stats)) {
@@ -268,4 +270,22 @@ export function recordStat(bb, id, result) {
   const x = bb.stats?.[id] || { ab: 0, h: 0, hr: 0 };
   const y = { ab: x.ab + 1, h: x.h + (result === 'out' ? 0 : 1), hr: x.hr + (result === 'hr' ? 1 : 0) };
   return { ...bb, stats: { ...(bb.stats || {}), [id]: y } };
+}
+
+// ---- プレゼント（1つの iPhone で1回だけ） ----
+// 2026-11-27 オーナー: スカウト券10枚を1回だけ配る
+export const GIFTS = [
+  { id: 'gift-2026-11-27', tickets: 10, title: 'スカウト券 10枚プレゼント！' },
+];
+const GIFT_RE = /^gift-[0-9a-z-]{1,40}$/;
+
+// まだもらっていないプレゼントを受け取る。もらい済みなら bb はそのまま
+export function claimGifts(bb) {
+  const have = new Set(bb.gifts || []);
+  const got = GIFTS.filter(g => !have.has(g.id));
+  if (!got.length) return { bb, got };
+  return {
+    bb: { ...bb, tickets: bb.tickets + got.reduce((t, g) => t + g.tickets, 0), gifts: [...have, ...got.map(g => g.id)] },
+    got,
+  };
 }
