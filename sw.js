@@ -3,12 +3,13 @@
 // v17: プレイヤーのレベルを Lv 1〜100 にした
 // v18: レベルの上限を Lv 1000 にした
 // v19: 野球モード（試合とスカウト）を足した
+// v25: 設定に「いまの版」と「更新する」、新しい版が届いたらお知らせ
 // v24: スカウト券10枚のプレゼント（1回だけ）
 // v23: ランクを B・A・S の3段階に（S 5%）
 // v22: スカウトの演出を豪華に（照明・段階演出・フラッシュ・カードめくり・紙吹雪）
 // v21: オーダー（打順）・選手の成績・強い選手は打球が伸びる
 // v20: 野球モードの効果音（打球音・歓声・アウト・スカウト）
-const CACHE = 'hero-study-v24';
+const CACHE = 'hero-study-v25';
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +25,7 @@ const ASSETS = [
   './js/boss.js',
   './js/baseball.js',
   './js/bbsound.js',
+  './js/version.js',
   './js/sound.js',
   './data/index.js',
   './data/units.js',
