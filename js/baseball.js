@@ -2,10 +2,11 @@
 // 設計: docs/2026-11-25-野球モード-設計.md
 import { PLAYERS } from '../data/players.js';
 
-export const RARITIES = ['N', 'R', 'SR', 'L'];
-export const RARITY_LABEL = { N: 'ノーマル', R: 'レア', SR: 'スーパーレア', L: 'レジェンド' };
+// ランクは B・A・S の3段階（2026-11-27 オーナー）
+export const RARITIES = ['B', 'A', 'S'];
+export const RARITY_LABEL = { B: 'Bランク', A: 'Aランク', S: 'Sランク' };
 // 出る確率（%）。画面にもこのまま出す
-export const ODDS = { N: 55, R: 30, SR: 12, L: 3 };
+export const ODDS = { B: 65, A: 30, S: 5 };
 // 相手チームの1試合の点の合計の幅（リーグは架空）
 export const LEAGUES = [
   { name: 'ルーキーリーグ', team: 'ひよっこスターズ', min: 0, max: 2 },
@@ -19,7 +20,7 @@ export const WIN_TO_PROMOTE = 3;
 export const POINTS_PER_TICKET = 10;
 export const MAX_STAR = 5;
 export const STAR_OVERFLOW_POINTS = 5;
-const POWER = { N: 10, R: 20, SR: 35, L: 60 };
+const POWER = { B: 10, A: 20, S: 45 };
 
 const BY_ID = new Map(PLAYERS.map(p => [p.id, p]));
 const BY_RARITY = Object.fromEntries(RARITIES.map(r => [r, PLAYERS.filter(p => p.rarity === r)]));
@@ -151,15 +152,19 @@ export function applyResult(bb, outcome) {
 }
 
 // ---- スカウト ----
+function pickBy(list, rng) {
+  const total = list.reduce((t, r) => t + ODDS[r], 0);
+  let x = rng() * total;
+  for (const r of list) { if (x < ODDS[r]) return r; x -= ODDS[r]; }
+  return list[list.length - 1];
+}
+
 function rollRarity(rng, minR = false) {
   if (minR) {
-    // レア以上だけで、同じ比べ方の確率にする
-    const total = ODDS.R + ODDS.SR + ODDS.L;
-    const x = rng() * total;
-    return x < ODDS.L ? 'L' : x < ODDS.L + ODDS.SR ? 'SR' : 'R';
+    // A以上だけで、同じ比べ方の確率にする（10連の確定枠）
+    return pickBy(['S', 'A'], rng);
   }
-  const x = rng() * 100;
-  return x < ODDS.L ? 'L' : x < ODDS.L + ODDS.SR ? 'SR' : x < ODDS.L + ODDS.SR + ODDS.R ? 'R' : 'N';
+  return pickBy(['S', 'A', 'B'], rng);
 }
 
 // n は 1 か 10。券が足りなければ何も引かない
@@ -168,7 +173,7 @@ export function scout(bb, n, rng = Math.random) {
   let b = { ...bb, players: { ...bb.players }, tickets: bb.tickets - n };
   const rarities = [];
   for (let i = 0; i < n; i++) rarities.push(rollRarity(rng));
-  if (n === 10 && rarities.every(r => r === 'N')) rarities[9] = rollRarity(rng, true);
+  if (n === 10 && rarities.every(r => r === 'B')) rarities[9] = rollRarity(rng, true);
   const pulls = [];
   for (const rarity of rarities) {
     const list = BY_RARITY[rarity];
@@ -203,17 +208,17 @@ export function teamPower(bb) {
     .reduce((a, b) => a + b, 0);
 }
 
-// スーパーレア以上が3人いると、1試合に1回「代打」が使える
+// Sランクが3人いると、1試合に1回「代打」が使える
 export function canPinchHit(bb) {
   return Object.keys(bb.players).filter(id => {
     const p = BY_ID.get(id);
-    return p && (p.rarity === 'SR' || p.rarity === 'L');
+    return p && p.rarity === 'S';
   }).length >= 3;
 }
 
 // ---- オーダー・打球の伸び・成績（2026-11-25） ----
 // 正解したときだけ、強い選手は打球が伸びる。[ヒット→二塁打 %, 二塁打→ホームラン %]。★が1つ増えるごとに +5%
-export const BOOST = { N: [0, 0], R: [10, 0], SR: [25, 10], L: [40, 25] };
+export const BOOST = { B: [0, 0], A: [10, 0], S: [30, 15] };
 const STAR_BONUS = 5;
 
 export function boostResult(result, player, star = 1, rng = Math.random) {

@@ -39,14 +39,9 @@ export const SFX = {
   stepup: [tone('triangle', 523, 1047, 0, 0.3, 0.16), tone('sine', 1568, 2093, 0.18, 0.3, 0.1), noise('highpass', 4000, 0.7, 0.2, 0.25, 0.04)],
   // カードをめくる音
   flip: [noise('bandpass', 2200, 1.2, 0, 0.08, 0.12), tone('sine', 1200, 1600, 0, 0.08, 0.05)],
-  revealN: [tone('sine', 880, 880, 0, 0.3, 0.2)],
-  revealR: [tone('sine', 880, 880, 0, 0.2, 0.2), tone('sine', 1175, 1175, 0.1, 0.35, 0.2)],
-  revealSR: [
-    tone('sine', 1047, 1047, 0, 0.2, 0.18), tone('sine', 1319, 1319, 0.07, 0.2, 0.1),
-    tone('sine', 1568, 1568, 0.14, 0.2, 0.18), tone('sine', 2093, 2093, 0.21, 0.6, 0.18),
-    cheer(0.2, 1.2, 0.12),
-  ],
-  revealL: [score('rankUp', 0), cheer(0.2, 2.6, 0.26), ...claps(0.5, 16, 0.1)],
+  revealB: [tone('sine', 880, 880, 0, 0.3, 0.2)],
+  revealA: [tone('sine', 880, 880, 0, 0.2, 0.2), tone('sine', 1175, 1175, 0.1, 0.35, 0.2)],
+  revealS: [score('rankUp', 0), cheer(0.2, 2.6, 0.26), ...claps(0.5, 16, 0.1)],
 };
 
 const partEnd = p => (p.k === 'score' ? p.t + scoreLength(SCORES[p.name]) : p.t + p.d);

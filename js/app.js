@@ -238,7 +238,7 @@ const HELP = [
     '教科を開いて「⚾ 試合」。問題が打席になる。正解はヒット、3連続正解は二塁打、記入問題の正解は二塁打で、前の打席も正解ならホームラン。まちがえるとアウト。',
     '3イニング（問題は最大12問）で、相手チームより点が多ければ勝ち。3勝するとリーグが上がって、相手が強くなる。',
     '正解するとスカウトポイント。記入問題の正解は3ポイント、ほかの正解は1ポイント（ミッション・特訓・試合。ボス戦はなし）。10ポイントでスカウト券1枚。試合に勝つと券がもう1枚。',
-    'スカウト券で選手を引ける（すべて架空の選手120人）。同じ選手が出たら★が増える（★5まで）。スーパーレア以上が3人そろうと、試合で1回だけ「代打」が使える（まちがえた打席のアウトを取り消して、次の問題で打ち直す）。',
+    'スカウト券で選手を引ける（すべて架空の選手120人）。同じ選手が出たら★が増える（★5まで）。Sランクが3人そろうと、試合で1回だけ「代打」が使える（まちがえた打席のアウトを取り消して、次の問題で打ち直す）。',
   ]],
   ['ヴィラン（苦手な問題）', [
     '同じ問題を2回まちがえると、その問題が「ヴィラン」になります。',
@@ -676,7 +676,7 @@ function scoutScreen(back) {
       el('div', { class: 'bar' }, el('span', { style: `width:${pct(bb.points / POINTS_PER_TICKET)}%` }))),
     el('button', { class: 'primary', disabled: bb.tickets < 1, onclick: () => doScout(1, back) }, '1回スカウト（券1枚）'),
     el('div', { class: 'mt' }),
-    el('button', { class: 'boss', disabled: bb.tickets < 10, onclick: () => doScout(10, back) }, '10連スカウト（券10枚・レア以上1人確定）'),
+    el('button', { class: 'boss', disabled: bb.tickets < 10, onclick: () => doScout(10, back) }, '10連スカウト（券10枚・Aランク以上1人確定）'),
     bb.tickets < 1 ? el('p', { class: 'muted center note' }, '券がないときは、教科の「⚾ 試合」やミッションで正解してポイントをためよう') : null,
     el('div', { class: 'panel mt' }, el('h3', {}, '出る確率'),
       [...RARITIES].reverse().map(r => el('div', { class: 'row' }, el('span', { class: `rtag r-${r}` }, RARITY_LABEL[r]), el('span', { class: 'spacer' }), el('span', {}, `${ODDS[r]}%`)))),
@@ -686,14 +686,14 @@ function scoutScreen(back) {
 
 // スカウトの演出（豪華版）: スポットライト → ボールの色が段階的に上がる → フラッシュ → カードを1枚ずつめくる
 let scoutRun = null; // 画面を移ったら古い演出の続きを止める
-const STEP_TEXT = { N: 'スカウト中…', R: 'おっ…？', SR: 'これは…！', L: 'まさか…！！' };
+const STEP_TEXT = { B: 'スカウト中…', A: 'おっ…？', S: 'まさか…！！' };
 const reducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; } };
 
 function confetti(best) {
   if (reducedMotion()) return;
-  const colors = best === 'L' ? ['#ff9ad5', '#b06cff', '#5ad1ff', '#ffd640', '#7ff0b0'] : ['#ffd640', '#ffb300', '#fff3b0', '#ffffff'];
+  const colors = best === 'S' ? ['#ff9ad5', '#b06cff', '#5ad1ff', '#ffd640', '#7ff0b0'] : ['#ffd640', '#ffb300', '#fff3b0', '#ffffff'];
   const box = el('div', { class: 'confetti-box' });
-  for (let i = 0; i < (best === 'L' ? 70 : 40); i++) {
+  for (let i = 0; i < (best === 'S' ? 70 : 40); i++) {
     box.append(el('span', { class: 'confetti', style: `left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${(Math.random() * 0.8).toFixed(2)}s;animation-duration:${(2 + Math.random() * 1.5).toFixed(2)}s` }));
   }
   document.body.append(box);
@@ -705,13 +705,13 @@ function doScout(n, back) {
   if (!r.pulls.length) { scoutScreen(back); return; }
   state = { ...state, baseball: r.bb };
   persist();
-  const best = r.pulls.reduce((m, p) => (RARITIES.indexOf(p.rarity) > RARITIES.indexOf(m) ? p.rarity : m), 'N');
+  const best = r.pulls.reduce((m, p) => (RARITIES.indexOf(p.rarity) > RARITIES.indexOf(m) ? p.rarity : m), 'B');
   const token = {};
   scoutRun = token;
   const later = (ms, fn) => setTimeout(() => { if (scoutRun === token) fn(); }, ms);
   const steps = RARITIES.slice(0, RARITIES.indexOf(best) + 1);
 
-  const ball = el('div', { class: 'ball rolling r-N' });
+  const ball = el('div', { class: 'ball rolling r-B' });
   const text = el('p', { class: 'steptext' }, STEP_TEXT.N);
   const stage = el('div', { class: 'stage' },
     el('div', { class: 'spot l' }), el('div', { class: 'spot r' }),
@@ -732,26 +732,26 @@ function doScout(n, back) {
     document.body.append(el('div', { class: `flash r-${best}` }));
     setTimeout(() => document.querySelector('.flash')?.remove(), 800);
     sfx(`reveal${best}`);
-    if (best === 'L') {
+    if (best === 'S') {
       stage.classList.add('shake');
-      text.replaceChildren(el('span', { class: 'legend-text' }, 'LEGEND'));
+      text.replaceChildren(el('span', { class: 'legend-text' }, 'S RANK'));
     }
   });
-  later(flashAt + (best === 'L' ? 1300 : 700), () => showResult(false));
+  later(flashAt + (best === 'S' ? 1300 : 700), () => showResult(false));
 
   function showResult(skipped) {
     if (scoutRun !== token) return;
     scoutRun = null;
     if (skipped) sfx(`reveal${best}`);
-    if (best === 'SR' || best === 'L') confetti(best);
+    if (best === 'S') confetti(best);
     const cards = r.pulls.map(p => {
       const front = playerCard(playerById(p.id), p.star, p.isNew);
       front.classList.add('flip-front');
-      if (p.rarity === 'SR' || p.rarity === 'L') front.classList.add('shine');
+      if (p.rarity === 'S') front.classList.add('shine');
       return el('div', { class: `flip r-${p.rarity}` }, el('div', { class: 'flip-inner' }, front, el('div', { class: 'flip-back' }, '⚾')));
     });
     screen(
-      el('h1', { class: `center ${best === 'L' ? 'legend-text big' : ''}` }, best === 'L' ? 'レジェンド登場！！' : best === 'SR' ? 'スーパーレア！' : 'スカウト結果'),
+      el('h1', { class: `center ${best === 'S' ? 'legend-text big' : ''}` }, best === 'S' ? 'Sランク登場！！' : best === 'A' ? 'Aランク！' : 'スカウト結果'),
       el('div', { class: 'pgrid' }, cards),
       el('button', { class: 'primary', disabled: state.baseball.tickets < n, onclick: () => doScout(n, back) }, `もう一度（券 ${n}枚・のこり ${state.baseball.tickets}枚）`),
       el('div', { class: 'mt' }),
@@ -764,20 +764,20 @@ function doScout(n, back) {
     const order = r.pulls.map((p, i) => i).sort((x, y) => RARITIES.indexOf(r.pulls[x].rarity) - RARITIES.indexOf(r.pulls[y].rarity));
     order.forEach((i, k) => setTimeout(() => {
       cards[i].classList.add('open');
-      sfx(RARITIES.indexOf(r.pulls[i].rarity) >= 2 ? `reveal${r.pulls[i].rarity}` : 'flip');
+      sfx(r.pulls[i].rarity === 'S' ? 'revealS' : 'flip');
     }, 150 + k * gap));
   }
 }
 
 function roster(back) {
   const bb = state.baseball;
-  const sr = PLAYERS.filter(p => (p.rarity === 'SR' || p.rarity === 'L') && bb.players[p.id]).length;
+  const sr = PLAYERS.filter(p => p.rarity === 'S' && bb.players[p.id]).length;
   screen(
     el('div', { class: 'row' }, el('h1', {}, '選手名鑑'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
     el('div', { class: 'panel' },
       el('p', {}, `集めた選手 ${Object.keys(bb.players).length} / ${PLAYERS.length}`),
       el('p', {}, `チーム力 ${teamPower(bb)}（強い順に9人の合計）`),
-      el('p', { class: canPinchHit(bb) ? 'gold' : 'muted' }, canPinchHit(bb) ? '代打が使える！（スーパーレア以上が3人）' : `代打まで：スーパーレア以上があと ${3 - sr} 人`)),
+      el('p', { class: canPinchHit(bb) ? 'gold' : 'muted' }, canPinchHit(bb) ? '代打が使える！（Sランクが3人）' : `代打まで：Sランクがあと ${3 - sr} 人`)),
     [...RARITIES].reverse().map(r => {
       const list = PLAYERS.filter(p => p.rarity === r);
       return el('div', { class: 'panel' },
@@ -797,7 +797,7 @@ function orderScreen(back) {
   const owned = Object.keys(bb.players).length;
   screen(
     el('div', { class: 'row' }, el('h1', {}, 'オーダー'), el('span', { class: 'spacer' }), el('button', { class: 'small', onclick: back }, 'もどる')),
-    el('p', { class: 'muted' }, '打順の枠を押して選手を選ぶ。正解したとき、強い選手は打球が伸びる（スーパーレア・レジェンドはホームランも）。'),
+    el('p', { class: 'muted' }, '打順の枠を押して選手を選ぶ。正解したとき、強い選手は打球が伸びる（Sランクはホームランも）。'),
     owned === 0 ? el('p', { class: 'panel' }, 'まだ選手がいません。スカウトで選手を集めよう。空いた枠は「助っ人」が打ちます。') : null,
     L.map((id, i) => {
       const p = id ? playerById(id) : null;
