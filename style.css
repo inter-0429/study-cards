@@ -247,3 +247,9 @@ h1.legend-text.big { font-size: 30px; letter-spacing: 1px; }
   .spot, .ball.rolling, .shake, .pcard.shine::after, .confetti { animation: none; }
   .flip-inner { transition: none; }
 }
+
+/* ---- プレゼント（2026-11-27） ---- */
+.panel.gift { border: 2px solid var(--gold); background: linear-gradient(135deg, #3a2f8a, #252b74); box-shadow: 0 0 18px rgba(255, 196, 0, 0.45); }
+.giftbox { font-size: 48px; animation: giftbounce 1s ease-in-out infinite alternate; }
+@keyframes giftbounce { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-6px) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce) { .giftbox { animation: none; } }
