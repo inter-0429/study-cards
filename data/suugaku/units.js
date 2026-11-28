@@ -10,6 +10,7 @@ export const UNITS = [
       '指数法則: aᵐ × aⁿ ＝ aᵐ⁺ⁿ、(aᵐ)ⁿ ＝ aᵐⁿ、(ab)ⁿ ＝ aⁿbⁿ',
       '展開の公式: (a＋b)² ＝ a²＋2ab＋b²、(a＋b)(a−b) ＝ a²−b²',
       '(x＋a)(x＋b) ＝ x²＋(a＋b)x＋ab、(ax＋b)(cx＋d) ＝ acx²＋(ad＋bc)x＋bd',
+      '3次式: (a＋b)³ ＝ a³＋3a²b＋3ab²＋b³、(a−b)³ ＝ a³−3a²b＋3ab²−b³、(a＋b)(a²−ab＋b²) ＝ a³＋b³',
     ],
     songs: [{
       title: '展開マーチ',
@@ -25,6 +26,7 @@ export const UNITS = [
       'a²＋2ab＋b² ＝ (a＋b)²、a²−b² ＝ (a＋b)(a−b)',
       'x²＋(a＋b)x＋ab ＝ (x＋a)(x＋b)。たして真ん中、かけて最後になる2数をさがす',
       'acx²＋(ad＋bc)x＋bd はたすきがけで因数分解する。同じ式のかたまりは1文字におきかえる',
+      '3次式: a³＋b³ ＝ (a＋b)(a²−ab＋b²)、a³−b³ ＝ (a−b)(a²＋ab＋b²)',
     ],
     songs: [{
       title: 'たしてかけて',
