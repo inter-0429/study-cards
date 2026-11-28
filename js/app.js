@@ -1,6 +1,7 @@
 // 画面。ロジックは engine.js、保存は store.js にある。
 import {
   createState, recordAnswer, rankFor, touchDay, isEnabled, pickMission, pickGame, pickTimedIndex,
+  hasCalc, isCalcOnly, toggleCalcOnly, playQuestions, stageQuestions,
   pickTraining, unitProgress, activeVillainCount, villainRetries, checkInput, underDailyMax, DAILY_MAX,
   unitSkills, subjectSummary, SKILL_LABEL, SKILL_MIN_ATTEMPTS, includeNewUnits, whyWrong,
 } from './engine.js';
@@ -132,7 +133,7 @@ function rankPanel() {
 
 function missionButton(S) {
   return el('button', { class: 'primary', disabled: enabledUnits(S).length === 0,
-    onclick: () => startQuiz('mission', pickMission(state, S.questions), { subject: S }) }, '今日のミッション（5問）');
+    onclick: () => startQuiz('mission', pickMission(state, playQuestions(state, S)), { subject: S }) }, '今日のミッション（5問）');
 }
 
 function subjectCard(S) {
@@ -186,6 +187,22 @@ function skillsPanel(S) {
       el('div', { class: 'bar' }, el('span', { style: `width:${r.level === 'few' ? 0 : pct(r.accuracy)}%` })))));
 }
 
+// 計算だけモードの切りかえ（計算問題がある教科だけ出す）
+function calcPanel(S) {
+  if (!hasCalc(S)) return null;
+  const on = isCalcOnly(state, S.id);
+  const n = S.questions.filter(q => q.field === '計算').length;
+  return el('div', { class: `panel calc ${on ? 'on' : ''}` },
+    el('div', { class: 'row' },
+      el('h3', {}, '計算問題だけ'),
+      el('span', { class: `badge ${on ? 'gold' : 'off'}` }, on ? 'ON' : 'OFF'),
+      el('span', { class: 'spacer' }),
+      el('button', { class: `small ${on ? '' : 'primary'}`, onclick: () => { state = toggleCalcOnly(state, S.id); persist(); subjectHome(S); } }, on ? 'OFFにもどす' : 'ONにする')),
+    el('p', { class: 'muted' }, on
+      ? `ミッション・試合・特訓・ステージに、計算問題（${n}問）だけが出ます。言葉の問題は出ません。`
+      : 'テストが計算だけのときは ON にしよう。言葉の問題が出なくなります。'));
+}
+
 function subjectHome(S) {
   refreshDay();
   const v = villainCount(S);
@@ -195,6 +212,7 @@ function subjectHome(S) {
   screen(
     el('div', { class: 'row' }, el('button', { class: 'small', onclick: home }, '← 教科の一覧'), el('span', { class: 'spacer' }), el('h1', {}, S.name)),
     noRange ? el('div', { class: 'panel' }, el('p', {}, '挑戦できる試験がありません。'), el('p', { class: 'muted' }, '「ステージ」で範囲に入れる試験を選んでください。')) : null,
+    calcPanel(S),
     missionButton(S),
     el('p', { class: 'muted center note' }, '毎日まずはここ。5問で3分くらい。移動中におすすめ'),
     gameButton(S),
@@ -539,7 +557,7 @@ function result(s) {
       s.born ? el('p', { class: 'muted' }, `新しいヴィラン ${s.born} 体。特訓で倒そう`) : null),
     s.newCards.length ? el('div', { class: 'panel' }, el('h3', {}, '新しいカード'),
       el('div', { class: 'cardgrid' }, s.newCards.map(c => el('div', { class: 'card pop' }, c)))) : null,
-    el('button', { class: 'primary', onclick: () => startQuiz(s.mode, s.mode === 'mission' ? pickMission(state, s.subject.questions) : unitQuestions(s.questions[0].unit), { label: s.label, subject: s.subject }) }, 'もう1セット'),
+    el('button', { class: 'primary', onclick: () => startQuiz(s.mode, s.mode === 'mission' ? pickMission(state, playQuestions(state, s.subject)) : unitQuestions(s.questions[0].unit, s.subject), { label: s.label, subject: s.subject }) }, 'もう1セット'),
     el('div', { class: 'mt' }),
     el('button', { onclick: () => subjectHome(s.subject) }, `${s.subject.name}の画面へ`),
     el('div', { class: 'mt' }),
@@ -604,7 +622,7 @@ function gameButton(S) {
 }
 
 function startGame(S) {
-  const qs = pickGame(state, S.questions);
+  const qs = pickGame(state, playQuestions(state, S));
   if (!qs.length) { dailyDone(S); return; }
   startQuiz('game', qs, { subject: S, label: `⚾ ${S.name} 試合`, onDone: gameResult });
   sfx('playball');
@@ -850,8 +868,8 @@ function pickForSlot(slot, back) {
 }
 
 // ---- ステージ ----
-function unitQuestions(unitId) {
-  return pickMission({ ...state, enabled: [unitId] }, ALL_QS);
+function unitQuestions(unitId, S) {
+  return pickMission({ ...state, enabled: [unitId] }, S ? stageQuestions(state, S, unitId) : ALL_QS);
 }
 
 function stages(S) {
@@ -872,7 +890,7 @@ function stages(S) {
         el('div', { class: 'bar' }, el('span', { style: `width:${Math.round(p.cleared / p.total * 100)}%` })),
         el('p', { class: 'muted mt' }, `正解した問題 ${p.cleared} / ${p.total}`),
         el('div', { class: 'row wrap' },
-          el('button', { class: 'small', onclick: () => startQuiz('unit', unitQuestions(u.id), { label: `${S.name} ${u.stage}`, subject: S }) }, '挑戦する'),
+          el('button', { class: 'small', onclick: () => startQuiz('unit', unitQuestions(u.id, S), { label: `${S.name} ${u.stage}`, subject: S }) }, '挑戦する'),
           el('button', { class: 'small', onclick: () => summary(u, () => stages(S)) }, '要点を見る'),
           el('button', { class: 'small ghost', onclick: () => toggleUnit(u.id, S) }, on ? '範囲から外す' : '範囲に入れる')));
     }),
@@ -903,7 +921,7 @@ function summary(u, back, nextLabel, onNext) {
 
 // ---- 特訓 ----
 function startTraining(S) {
-  const rounds = pickTraining(state, S.questions, S.units);
+  const rounds = pickTraining(state, playQuestions(state, S), S.units);
   if (!rounds.length) { dailyDone(S); return; }
   const villainsBefore = villainCount(S);
   let total = { xp: 0, defeated: 0, correct: 0, count: 0, newCards: [], rankUp: null };

@@ -228,6 +228,27 @@ export function mixSet(lists, size, { rng = Math.random } = {}) {
   return picked;
 }
 
+// ---- 計算だけモード（教科ごと。2026-11-28 追加） ----
+// state.calcOnly = 計算問題だけ出す教科の id の一覧。前の版の記録には無い（＝どの教科もふつう）
+export const CALC_FIELD = '計算';
+export function hasCalc(subject) { return subject.questions.some(q => q.field === CALC_FIELD); }
+export function isCalcOnly(state, subjectId) { return Array.isArray(state.calcOnly) && state.calcOnly.includes(subjectId); }
+export function toggleCalcOnly(state, subjectId) {
+  const cur = Array.isArray(state.calcOnly) ? state.calcOnly : [];
+  return { ...state, calcOnly: cur.includes(subjectId) ? cur.filter(x => x !== subjectId) : [...cur, subjectId] };
+}
+// ミッション・試合・特訓に使う問題。計算だけモードなら計算問題だけ
+export function playQuestions(state, subject) {
+  return isCalcOnly(state, subject.id) ? subject.questions.filter(q => q.field === CALC_FIELD) : subject.questions;
+}
+// ステージの「挑戦する」に使う問題。計算問題が1問もない試験（集合と命題など）は、全部の問題を出す
+export function stageQuestions(state, subject, unitId) {
+  const all = subject.questions.filter(q => q.unit === unitId);
+  if (!isCalcOnly(state, subject.id)) return all;
+  const calc = all.filter(q => q.field === CALC_FIELD);
+  return calc.length ? calc : all;
+}
+
 export function pickMission(state, questions, rng = Math.random, now = Date.now()) {
   const pool = questions.filter(q => isEnabled(state, q.unit) && underDailyMax(state, q, now));
   const rec = q => state.qs[q.id];

@@ -19,6 +19,7 @@ function sanitize(raw) {
   }
   if (typeof raw.sound === 'boolean') s.sound = raw.sound;
   if (Array.isArray(raw.known) && raw.known.every(x => typeof x === 'string')) s.known = raw.known;
+  if (Array.isArray(raw.calcOnly) && raw.calcOnly.every(x => typeof x === 'string')) s.calcOnly = raw.calcOnly;
   if (isObj(raw.bosses)) s.bosses = cleanBosses(raw.bosses);
   s.baseball = cleanBaseball(raw.baseball);
   return s;
