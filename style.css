@@ -258,3 +258,6 @@ h1.legend-text.big { font-size: 30px; letter-spacing: 1px; }
 .update-banner { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 70; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius); background: #2f3aa8; border: 2px solid var(--gold); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-weight: 700; }
 .update-banner span { flex: 1; }
 .update-banner button { width: auto; min-height: 44px; padding: 0 16px; }
+
+/* 計算だけモード（2026-11-28） */
+.panel.calc.on { border-color: #ffd34d; box-shadow: 0 0 0 1px #ffd34d inset; }
