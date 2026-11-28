@@ -9,7 +9,7 @@
 // v22: スカウトの演出を豪華に（照明・段階演出・フラッシュ・カードめくり・紙吹雪）
 // v21: オーダー（打順）・選手の成績・強い選手は打球が伸びる
 // v20: 野球モードの効果音（打球音・歓声・アウト・スカウト）
-const CACHE = 'hero-study-v26';
+const CACHE = 'hero-study-v27';
 const ASSETS = [
   './',
   './index.html',
@@ -58,6 +58,8 @@ const ASSETS = [
   './data/kagaku/k03.js',
   './data/kagaku/k04.js',
   './data/kagaku/k05.js',
+  './data/kagaku/k06.js',
+  './data/kagaku/k07.js',
   './data/kagaku/iikae.js',
   './data/seibutsu/units.js',
   './data/seibutsu/index.js',
